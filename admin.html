@@ -1,0 +1,953 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CSCQC Portal</title>
+  <link rel="icon" type="image/png" href="https://cscqcph.com/images/bg/cscqcph.png" />
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+
+  <link rel="stylesheet" href="admin.css">
+  <style>
+    /* Live Status Alerts Style */
+    .status-alert {
+      padding: 10px 15px;
+      margin-bottom: 15px;
+      border-radius: 4px;
+      font-weight: 500;
+      font-size: 0.9rem;
+      display: none;
+    }
+    .alert-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .alert-danger { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+
+    /* Action Buttons Styles */
+    .action-btn {
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: 1rem;
+      margin: 0 5px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      transition: background 0.2s;
+    }
+    .btn-edit { color: #007bff; }
+    .btn-edit:hover { background: rgba(0, 123, 255, 0.1); }
+    .btn-delete { color: #dc3545; }
+    .btn-delete:hover { background: rgba(220, 53, 69, 0.1); }
+    .btn-login-as {
+      background: #198754;
+      color: white;
+      font-size: 0.8rem;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+    .btn-login-as:hover { background: #157347; }
+
+    /* Teacher Panel Dynamic Access Modal */
+    .teacher-portal-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(4px);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+    .teacher-portal-modal.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .modal-viewport {
+      background: #f8f9fa;
+      width: 90%;
+      max-width: 1000px;
+      height: 85vh;
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);
+    }
+    .modal-navbar {
+      background: #1e293b;
+      color: white;
+      padding: 15px 25px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-body-content {
+      padding: 25px;
+      flex: 1;
+      overflow-y: auto;
+    }
+    .teacher-badge-card {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      border-left: 5px solid #0d6efd;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+  </style>
+</head>
+
+<body>
+  <input type="checkbox" id="sidebar-toggle" />
+
+  <header class="mobile-header">
+    <div class="brand" style="padding: 0; margin: 0">
+      <i class="fa-solid fa-graduation-cap" style="font-size: 1.5rem"></i>
+      <div class="brand-text">
+        <h2 style="font-size: 0.9rem">Admin Panel</h2>
+      </div>
+    </div>
+    <label for="sidebar-toggle" class="menu-toggle-btn">
+      <i class="fa-solid fa-bars"></i>
+    </label>
+  </header>
+
+  <input type="radio" name="nav-tabs" id="tab-dashboard" class="tab-switch" checked />
+  <input type="radio" name="nav-tabs" id="tab-teachers" class="tab-switch" />
+  <input type="radio" name="nav-tabs" id="tab-sec-dept" class="tab-switch" />
+  <input type="radio" name="nav-tabs" id="tab-students" class="tab-switch" />
+  <input type="radio" name="nav-tabs" id="tab-assign" class="tab-switch" />
+
+  <aside class="sidebar">
+    <div>
+      <div class="brand">
+        <i class="fa-solid fa-graduation-cap"></i>
+        <div class="brand-text">
+          <h2>Admin Panel</h2>
+          <p>CSCQC</p>
+        </div>
+      </div>
+
+      <nav class="nav-menu" aria-label="Main Navigation">
+        <label for="tab-dashboard" onclick="document.getElementById('sidebar-toggle').checked = false"><i class="fa-solid fa-table-cells-large"></i> Dashboard</label>
+        <label for="tab-teachers" onclick="document.getElementById('sidebar-toggle').checked = false"><i class="fa-solid fa-users"></i> Teachers</label>
+        <label for="tab-sec-dept" onclick="document.getElementById('sidebar-toggle').checked = false"><i class="fa-solid fa-book-open"></i> Section & Dept</label>
+        <label for="tab-students" onclick="document.getElementById('sidebar-toggle').checked = false"><i class="fa-solid fa-user-graduate"></i> Students</label>
+        <label for="tab-assign" onclick="document.getElementById('sidebar-toggle').checked = false"><i class="fa-solid fa-gear"></i> Assign Module</label>
+      </nav>
+    </div>
+
+    <a href="#" class="logout-btn">
+      <i class="fa-solid fa-right-from-bracket"></i> Logout
+    </a>
+  </aside>
+
+  <div class="main-content">
+    <div id="system-alert" class="status-alert alert-success">Action executed successfully.</div>
+
+    <div class="global-term-container">
+      <div class="filter-group">
+        <label for="global-filter-year">
+          <i class="fa-solid fa-calendar-days" aria-hidden="true"></i> Academic Year:
+        </label>
+        <select id="global-filter-year" class="global-select">
+          <option value="2025-2026">2025–2026</option>
+          <option value="2024-2025">2024–2025</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label for="global-filter-sem">
+          <i class="fa-solid fa-clock" aria-hidden="true"></i> Semester:
+        </label>
+        <select id="global-filter-sem" class="global-select">
+          <option value="1st Semester">1st Semester</option>
+          <option value="2nd Semester">2nd Semester</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="tab-content" id="content-dashboard">
+      <h1 class="view-title">Dashboard Overview</h1>
+      <div class="view-subtitle">System Metrics Summary</div>
+
+      <div class="cards-grid">
+        <div class="card">
+          <div class="card-title">Total Teachers</div>
+          <div class="card-value" id="dash-total-teachers">0</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Total Students</div>
+          <div class="card-value" id="dash-total-students">0</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Total Assignments</div>
+          <div class="card-value" id="dash-total-assignments">0</div>
+        </div>
+      </div>
+
+      <div class="panel-block">
+        <div class="block-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; margin-bottom: 15px;">
+          <h2 class="block-title" style="margin: 0">Recent Assignments View</h2>
+          <div class="search-wrapper" style="position: relative; min-width: 250px">
+            <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #aaa;"></i>
+            <input type="text" class="table-search-input" data-target-table="dashboard-recent-table" placeholder="Search recent assignments..." style="width: 100%; padding: 6px 12px 6px 32px; border-radius: 4px; border: 1px solid #ccc;" />
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table id="dashboard-recent-table">
+            <thead>
+              <tr>
+                <th>Teacher</th>
+                <th>Subject</th>
+                <th>Section</th>
+                <th>Term</th>
+              </tr>
+            </thead>
+            <tbody id="dashboard-recent-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="content-teachers">
+      <h1 class="view-title">Teachers Management</h1>
+      <p class="view-subtitle">Manage Teacher Accounts and Portals</p>
+
+      <div class="panel-block">
+        <div class="block-header" style="margin-bottom: 20px;">
+          <h2 class="block-title" id="teacher-form-title">Register / Edit Teacher</h2>
+        </div>
+        <form id="teacher-form">
+          <input type="hidden" id="edit-teacher-id" value="" />
+          <div class="grid-3col">
+            <div class="form-group">
+              <label for="teacher-name-input">Full Name</label>
+              <input type="text" id="teacher-name-input" class="form-control" placeholder="e.g., Prof. Jane Doe" required />
+            </div>
+            <div class="form-group">
+              <label for="teacher-email-input">Email Address</label>
+              <input type="email" id="teacher-email-input" class="form-control" placeholder="e.g., jane@cscqcph.com" required />
+            </div>
+            <div class="form-group">
+              <label for="teacher-pass-input">Password Access</label>
+              <input type="text" id="teacher-pass-input" class="form-control" placeholder="Create login key" required />
+            </div>
+          </div>
+          <div class="form-buttons-row" style="margin-top: 15px;">
+            <button type="submit" class="btn-submit" id="btn-teacher-submit">
+              <i class="fa-solid fa-plus"></i> Save Teacher Profile
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div class="panel-block">
+        <div class="block-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; margin-bottom: 15px;">
+          <h2 class="block-title" style="margin: 0">Teachers Registry</h2>
+          <div class="search-wrapper" style="position: relative; min-width: 250px">
+            <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #aaa;"></i>
+            <input type="text" class="table-search-input" data-target-table="teachers-table" placeholder="Search teachers..." style="width: 100%; padding: 6px 12px 6px 32px; border-radius: 4px; border: 1px solid #ccc;" />
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table id="teachers-table">
+            <thead>
+              <tr>
+                <th>User ID</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Password</th>
+                <th>Actions Matrix</th>
+              </tr>
+            </thead>
+            <tbody id="teachers-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="content-sec-dept">
+      <h1 class="view-title">Section & Department</h1>
+      <div class="view-subtitle">Institutional Divisions</div>
+
+      <div class="panel-block">
+        <div class="block-header"><h2 class="block-title">Create / Manage Departments</h2></div>
+        <form id="department-form">
+          <div class="grid-2col">
+            <div class="form-group">
+              <label for="dept-code-input">Department Code</label>
+              <input type="text" id="dept-code-input" class="form-control" placeholder="e.g., IT" required />
+            </div>
+            <div class="form-group">
+              <label for="dept-name-input">Department Name Description</label>
+              <input type="text" id="dept-name-input" class="form-control" placeholder="e.g., Information Technology" required />
+            </div>
+          </div>
+          <div class="form-buttons-row"><button type="submit" class="btn-submit"><i class="fa-solid fa-plus"></i> Save Department</button></div>
+        </form>
+
+        <div class="table-responsive" style="margin-top: 20px">
+          <table id="departments-table">
+            <thead>
+              <tr>
+                <th>Department Code</th>
+                <th>Department Name</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="departments-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel-block">
+        <div class="block-header"><h2 class="block-title">Create / Manage Sections</h2></div>
+        <form id="section-form">
+          <div class="grid-3col">
+            <div class="form-group">
+              <label for="sec-name-input">Section Name</label>
+              <input type="text" id="sec-name-input" class="form-control" placeholder="e.g., IT-101" required />
+            </div>
+            <div class="form-group">
+              <label for="sec-year-select">School Year</label>
+              <select id="sec-year-select" class="form-control" required>
+                <option value="2025-2026">S.Y. 2025-2026</option>
+                <option value="2026-2027">S.Y. 2026-2027</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="sec-sem-select">Semester</label>
+              <select id="sec-sem-select" class="form-control" required>
+                <option value="1st Semester">1st Semester</option>
+                <option value="2nd Semester">2nd Semester</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-buttons-row"><button type="submit" class="btn-submit"><i class="fa-solid fa-plus"></i> Save Section</button></div>
+        </form>
+
+        <div class="table-responsive" style="margin-top: 20px">
+          <table id="sections-table">
+            <thead>
+              <tr>
+                <th>Section Name</th>
+                <th>School Year</th>
+                <th>Semester</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="sections-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="content-students">
+      <h1 class="view-title">Students Management</h1>
+      <p class="view-subtitle">Manage registered institution students</p>
+
+      <div class="panel-block">
+        <div class="block-header">
+          <h2 class="block-title" id="student-form-title">Register / Edit Student</h2>
+        </div>
+        <form id="student-form">
+          <input type="hidden" id="edit-student-id" value="" />
+          <div class="grid-3col">
+            <div class="form-group">
+              <label for="student-name-input">Student Full Name</label>
+              <input type="text" id="student-name-input" class="form-control" placeholder="e.g., Alice Smith" required />
+            </div>
+            <div class="form-group">
+              <label for="student-email-input">Email</label>
+              <input type="email" id="student-email-input" class="form-control" placeholder="e.g., alice@cscqcph.com" required />
+            </div>
+            <div class="form-group">
+              <label for="student-pass-input">Password Account Access</label>
+              <input type="text" id="student-pass-input" class="form-control" placeholder="Access token key" required />
+            </div>
+          </div>
+          <div class="form-buttons-row" style="margin-top: 15px;">
+            <button type="submit" class="btn-submit" id="btn-student-submit">
+              <i class="fa-solid fa-user-plus"></i> Save Student Profile
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div class="panel-block">
+        <div class="block-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; margin-bottom: 15px;">
+          <h2 class="block-title" style="margin: 0">Students Registry</h2>
+          <div class="search-wrapper" style="position: relative; min-width: 250px">
+            <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #aaa;"></i>
+            <input type="text" class="table-search-input" data-target-table="students-table" placeholder="Search students..." style="width: 100%; padding: 6px 12px 6px 32px; border-radius: 4px; border: 1px solid #ccc;" />
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table id="students-table">
+            <thead>
+              <tr>
+                <th>User ID</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Password</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="students-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="content-assign">
+      <h1 class="view-title">Curriculum & Faculty Assignment</h1>
+      <p class="view-subtitle">Manage tracks, unit assignments, and map structural distribution</p>
+
+      <div class="panel-block">
+        <div class="block-header"><h2 class="block-title">Create / Manage Curriculum Tracks</h2></div>
+        <form id="curriculum-form">
+          <div class="grid-2col">
+            <div class="form-group">
+              <label for="curr-name-input">Curriculum Track Name</label>
+              <input type="text" id="curr-name-input" class="form-control" placeholder="e.g., BSIT - 1st Year" required />
+            </div>
+            <div class="form-group">
+              <label for="curr-year-select">Target Academic Year</label>
+              <select id="curr-year-select" class="form-control" required>
+                <option value="2025-2026">S.Y. 2025-2026</option>
+                <option value="2026-2027">S.Y. 2026-2027</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid-2col">
+            <div class="form-group">
+              <label for="curr-sem-select">Target Semester Alignment</label>
+              <select id="curr-sem-select" class="form-control" required>
+                <option value="1st Semester">1st Semester</option>
+                <option value="2nd Semester">2nd Semester</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Add Course Modules to Bundle</label>
+              <div style="display: flex; gap: 8px;">
+                <input type="text" id="quick-subject-input" class="form-control" placeholder="e.g., IT101" />
+                <button type="button" id="btn-add-subject-tag" class="btn-submit" style="width: auto; padding: 0 15px;"><i class="fa-solid fa-plus"></i></button>
+              </div>
+              <div id="subject-chips-container" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;"></div>
+              <input type="hidden" id="hidden-subjects-array" value="" />
+            </div>
+          </div>
+          <div class="form-buttons-row"><button type="submit" class="btn-submit"><i class="fa-solid fa-floppy-disk"></i> Save Track</button></div>
+        </form>
+
+        <div class="table-responsive" style="margin-top: 20px">
+          <table id="curriculum-registry-table">
+            <thead>
+              <tr>
+                <th>Track Bundle</th>
+                <th>Term</th>
+                <th>Subjects</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="curriculum-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel-block">
+        <div class="block-header"><h2 class="block-title">Faculty Assignment Connection Matrix</h2></div>
+        <form id="assign-form">
+          <div class="grid-2col">
+            <div class="form-group">
+              <label for="select-teacher">Assigned Faculty / Instructor</label>
+              <select id="select-teacher" class="form-control" required></select>
+            </div>
+            <div class="form-group">
+              <label for="select-curriculum-subject">Linked Course Module Description</label>
+              <select id="select-curriculum-subject" class="form-control" required></select>
+            </div>
+          </div>
+          <div class="grid-3col">
+            <div class="form-group">
+              <label for="select-section">Target Section Distribution</label>
+              <select id="select-section" class="form-control" required></select>
+            </div>
+            <div class="form-group">
+              <label for="input-academic-units">Credit Units Allocation</label>
+              <input type="number" id="input-academic-units" class="form-control" min="1" max="5" placeholder="3" required />
+            </div>
+            <div class="form-group">
+              <label for="select-school-year">School Year Term</label>
+              <select id="select-school-year" class="form-control" required>
+                <option value="2025-2026">S.Y. 2025-2026</option>
+                <option value="2026-2027">S.Y. 2026-2027</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-buttons-row"><button type="submit" class="btn-submit"><i class="fa-solid fa-link"></i> Connect Assignment</button></div>
+        </form>
+
+        <div class="table-responsive" style="margin-top: 20px">
+          <table id="assignment-connections-table">
+            <thead>
+              <tr>
+                <th>Faculty</th>
+                <th>Course Description</th>
+                <th>Section</th>
+                <th>Units</th>
+                <th>Term</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="assignment-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="teacher-portal-modal" id="teacher-portal-overlay">
+    <div class="modal-viewport">
+      <div class="modal-navbar">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <i class="fa-solid fa-user-shield" style="color: #38bdf8; font-size: 1.3rem;"></i>
+          <div>
+            <h3 style="margin:0; font-size:1.1rem;" id="portal-teacher-title">Teacher Command Panel</h3>
+            <span style="font-size:0.75rem; opacity:0.8; background:#0284c7; padding:2px 6px; border-radius:3px;">Asynchronous Simulation Mode</span>
+          </div>
+        </div>
+        <button class="action-btn" id="close-portal-btn" style="color: white; font-size: 1.2rem; margin:0;"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body-content">
+        <div class="teacher-badge-card">
+          <h4 id="portal-display-name" style="margin:0 0 5px 0; color:#1e293b;">Instructor Profile</h4>
+          <p id="portal-display-email" style="margin:0; font-size:0.85rem; color:#64748b;">Email mapping...</p>
+        </div>
+
+        <h3 style="font-size:1.1rem; margin-bottom:15px; color:#1e293b;"><i class="fa-solid fa-folder-open" style="color:#eab308;"></i> Your Active Course Load Assignments</h3>
+        <div class="table-responsive">
+          <table style="background: white;">
+            <thead>
+              <tr style="background: #f1f5f9;">
+                <th>Course Code & Description</th>
+                <th>Assigned Section</th>
+                <th>Academic Loading Units</th>
+                <th>Term Validation Schedule</th>
+              </tr>
+            </thead>
+            <tbody id="portal-load-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      // --- VOLATILE CORE APP STATE (Simulated Database Layer) ---
+      const appState = {
+        teachers: [
+          { id: "TCH-001", name: "Dr. Manuel Que", email: "m.que@cscqcph.com", pass: "pass123" },
+          { id: "TCH-002", name: "Prof. Sarah Jensen", email: "s.jensen@cscqcph.com", pass: "jensen99" }
+        ],
+        departments: [
+          { code: "CSIT", name: "Computer Science & Information Tech" }
+        ],
+        sections: [
+          { name: "BSIT-4A", year: "2025-2026", sem: "1st Semester" },
+          { name: "BSCS-2B", year: "2025-2026", sem: "1st Semester" }
+        ],
+        curriculums: [
+          { id: "CUR-1", name: "Advanced Software Engineering Track", year: "2025-2026", sem: "1st Semester", subjects: ["CS401-Architectures", "CS402-CloudComputing"] }
+        ],
+        assignments: [
+          { id: "ASM-1", teacherId: "TCH-001", teacherName: "Dr. Manuel Que", subject: "CS401-Architectures", section: "BSIT-4A", units: 3, year: "2025-2026", sem: "1st Semester" }
+        ],
+        subjectsPool: ["CS401-Architectures", "CS402-CloudComputing", "IT101-Intro", "IT202-WebDev", "MATH11-Calculus"]
+      };
+
+      let temporarySubjectBundle = [];
+
+      // --- COMPILER INTERACTION SELECTORS ---
+      const alertBox = document.getElementById("system-alert");
+      const teacherForm = document.getElementById("teacher-form");
+      const deptForm = document.getElementById("department-form");
+      const sectionForm = document.getElementById("section-form");
+      const studentForm = document.getElementById("student-form");
+      const curriculumForm = document.getElementById("curriculum-form");
+      const assignForm = document.getElementById("assign-form");
+
+      function triggerAlert(message, type = "success") {
+        alertBox.className = `status-alert alert-${type}`;
+        alertBox.textContent = message;
+        alertBox.style.display = "block";
+        setTimeout(() => { alertBox.style.display = "none"; }, 4000);
+      }
+
+      // --- DYNAMIC RENDERING INTERFACES ---
+      function renderAllTables() {
+        // Render Teachers Table
+        const tBody = document.getElementById("teachers-table-body");
+        tBody.innerHTML = "";
+        appState.teachers.forEach(t => {
+          tBody.innerHTML += `
+            <tr data-id="${t.id}">
+              <td><strong>${t.id}</strong></td>
+              <td>${t.name}</td>
+              <td>${t.email}</td>
+              <td><code>${t.pass}</code></td>
+              <td>
+                <button class="action-btn btn-edit edit-teacher" title="Edit Profile"><i class="fa-solid fa-pen-to-square"></i></button>
+                <button class="action-btn btn-delete delete-teacher" title="Delete Account"><i class="fa-solid fa-trash-can"></i></button>
+                <button class="btn-login-as login-teacher-portal" title="Access Teacher Dashboard"><i class="fa-solid fa-right-to-bracket"></i> Log In as Teacher</button>
+              </td>
+            </tr>`;
+        });
+
+        // Render Departments Table
+        const dBody = document.getElementById("departments-table-body");
+        dBody.innerHTML = "";
+        appState.departments.forEach((d, idx) => {
+          dBody.innerHTML += `
+            <tr>
+              <td><strong>${d.code}</strong></td>
+              <td>${d.name}</td>
+              <td><button class="action-btn btn-delete drop-dept" data-idx="${idx}"><i class="fa-solid fa-trash-can"></i></button></td>
+            </tr>`;
+        });
+
+        // Render Sections Table
+        const sBody = document.getElementById("sections-table-body");
+        sBody.innerHTML = "";
+        appState.sections.forEach((s, idx) => {
+          sBody.innerHTML += `
+            <tr>
+              <td><strong>${s.name}</strong></td>
+              <td>${s.year}</td>
+              <td>${s.sem}</td>
+              <td><button class="action-btn btn-delete drop-sec" data-idx="${idx}"><i class="fa-solid fa-trash-can"></i></button></td>
+            </tr>`;
+        });
+
+        // Render Curriculums Table
+        const cBody = document.getElementById("curriculum-table-body");
+        cBody.innerHTML = "";
+        appState.curriculums.forEach((c, idx) => {
+          cBody.innerHTML += `
+            <tr>
+              <td><strong>${c.name}</strong></td>
+              <td>S.Y. ${c.year} (${c.sem})</td>
+              <td>${c.subjects.map(s => `<span style="background:#e2e8f0; padding:2px 6px; border-radius:4px; font-size:0.75rem; margin:2px; display:inline-block;">${s}</span>`).join("")}</td>
+              <td><button class="action-btn btn-delete drop-curr" data-idx="${idx}"><i class="fa-solid fa-trash-can"></i></button></td>
+            </tr>`;
+        });
+
+        // Render Assignments & Dashboard Recent View Table
+        const aBody = document.getElementById("assignment-table-body");
+        const dashBody = document.getElementById("dashboard-recent-body");
+        aBody.innerHTML = "";
+        dashBody.innerHTML = "";
+
+        appState.assignments.forEach((a, idx) => {
+          aBody.innerHTML += `
+            <tr>
+              <td>${a.teacherName}</td>
+              <td><strong>${a.subject}</strong></td>
+              <td><span class="badge">${a.section}</span></td>
+              <td>${a.units} Units</td>
+              <td>S.Y. ${a.year} - ${a.sem}</td>
+              <td><button class="action-btn btn-delete drop-assign" data-idx="${idx}"><i class="fa-solid fa-trash-can"></i></button></td>
+            </tr>`;
+
+          dashBody.innerHTML += `
+            <tr>
+              <td>${a.teacherName}</td>
+              <td><strong>${a.subject}</strong></td>
+              <td>${a.section}</td>
+              <td>S.Y. ${a.year} (${a.sem})</td>
+            </tr>`;
+        });
+
+        // Update Option Lists Dynamically for the Assignment Matrix Selectors
+        updateAssignmentSelectors();
+        
+        // Sync Real-Time Counters on Dashboard View Cards
+        document.getElementById("dash-total-teachers").textContent = appState.teachers.length;
+        document.getElementById("dash-total-assignments").textContent = appState.assignments.length;
+      }
+
+      function updateAssignmentSelectors() {
+        const selectTeacher = document.getElementById("select-teacher");
+        const selectSubject = document.getElementById("select-curriculum-subject");
+        const selectSection = document.getElementById("select-section");
+
+        if(selectTeacher && selectSubject && selectSection) {
+          selectTeacher.innerHTML = '<option value="" disabled selected hidden>Select teacher...</option>';
+          appState.teachers.forEach(t => { selectTeacher.innerHTML += `<option value="${t.id}">${t.name}</option>`; });
+
+          selectSubject.innerHTML = '<option value="" disabled selected hidden>Select available subject...</option>';
+          appState.subjectsPool.forEach(s => { selectSubject.innerHTML += `<option value="${s}">${s}</option>`; });
+
+          selectSection.innerHTML = '<option value="" disabled selected hidden>Select section label...</option>';
+          appState.sections.forEach(sec => { selectSection.innerHTML += `<option value="${sec.name}">${sec.name}</option>`; });
+        }
+      }
+
+      // --- CURRICULUM BUNDLE TAGS HANDLING MECHANICS ---
+      const quickSubjectInput = document.getElementById("quick-subject-input");
+      const btnAddSubjectTag = document.getElementById("btn-add-subject-tag");
+      const subjectChipsContainer = document.getElementById("subject-chips-container");
+      const hiddenSubjectsArray = document.getElementById("hidden-subjects-array");
+
+      if (btnAddSubjectTag) {
+        btnAddSubjectTag.addEventListener("click", () => {
+          const val = quickSubjectInput.value.trim();
+          if (val && !temporarySubjectBundle.includes(val)) {
+            temporarySubjectBundle.push(val);
+            if(!appState.subjectsPool.includes(val)) appState.subjectsPool.push(val);
+            quickSubjectInput.value = "";
+            renderChips();
+          }
+        });
+      }
+
+      function renderChips() {
+        subjectChipsContainer.innerHTML = "";
+        temporarySubjectBundle.forEach((s, idx) => {
+          const chip = document.createElement("span");
+          chip.style.cssText = "background:#007bff; color:#fff; padding:4px 10px; border-radius:20px; font-size:12px; display:inline-flex; align-items:center; gap:6px;";
+          chip.innerHTML = `${s} <i class="fa-solid fa-xmark" style="cursor:pointer;" data-idx="${idx}"></i>`;
+          chip.querySelector("i").addEventListener("click", (e) => {
+            temporarySubjectBundle.splice(idx, 1);
+            renderChips();
+          });
+          subjectChipsContainer.appendChild(chip);
+        });
+        hiddenSubjectsArray.value = JSON.stringify(temporarySubjectBundle);
+      }
+
+      // --- DATA FORMS OPERATIONS PIPELINE (CRUD INTERCEPTORS) ---
+
+      // 1. Teacher Profile CRUD Pipeline Action Form
+      teacherForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const editId = document.getElementById("edit-teacher-id").value;
+        const nameVal = document.getElementById("teacher-name-input").value;
+        const emailVal = document.getElementById("teacher-email-input").value;
+        const passVal = document.getElementById("teacher-pass-input").value;
+
+        if (editId) {
+          // Update Mode Action Block
+          const targetTeacher = appState.teachers.find(t => t.id === editId);
+          if (targetTeacher) {
+            targetTeacher.name = nameVal;
+            targetTeacher.email = emailVal;
+            targetTeacher.pass = passVal;
+            triggerAlert("Teacher tracking account profile refreshed successfully.");
+          }
+          document.getElementById("edit-teacher-id").value = "";
+          document.getElementById("teacher-form-title").textContent = "Register / Edit Teacher";
+          document.getElementById("btn-teacher-submit").innerHTML = '<i class="fa-solid fa-plus"></i> Save Teacher Profile';
+        } else {
+          // Create Mode Action Block
+          const newId = `TCH-00${appState.teachers.length + 1}`;
+          appState.teachers.push({ id: newId, name: nameVal, email: emailVal, pass: passVal });
+          triggerAlert("New faculty entity added to secure database storage pool.");
+        }
+        teacherForm.reset();
+        renderAllTables();
+      });
+
+      // 2. Department Creation Form Action Pipeline
+      deptForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const code = document.getElementById("dept-code-input").value.toUpperCase();
+        const name = document.getElementById("dept-name-input").value;
+        appState.departments.push({ code, name });
+        deptForm.reset();
+        renderAllTables();
+        triggerAlert("Department layout structure expanded successfully.");
+      });
+
+      // 3. Section Creation Form Action Pipeline
+      sectionForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const name = document.getElementById("sec-name-input").value;
+        const year = document.getElementById("sec-year-select").value;
+        const sem = document.getElementById("sec-sem-select").value;
+        appState.sections.push({ name, year, sem });
+        sectionForm.reset();
+        renderAllTables();
+        triggerAlert("New cohort class structure section initialized.");
+      });
+
+      // 4. Curriculum Bundle Compilation Save Form Pipeline
+      curriculumForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const name = document.getElementById("curr-name-input").value;
+        const year = document.getElementById("curr-year-select").value;
+        const sem = document.getElementById("curr-sem-select").value;
+
+        if(temporarySubjectBundle.length === 0) {
+          triggerAlert("You cannot create an empty curriculum bundle matrix.", "danger");
+          return;
+        }
+
+        appState.curriculums.push({
+          id: `CUR-${appState.curriculums.length + 1}`,
+          name, year, sem,
+          subjects: [...temporarySubjectBundle]
+        });
+
+        temporarySubjectBundle = [];
+        renderChips();
+        curriculumForm.reset();
+        renderAllTables();
+        triggerAlert("Curriculum tracking path compilation locked successfully.");
+      });
+
+      // 5. Faculty Assignment Structural Processing Form Matrix Connection Pipeline
+      assignForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const tId = document.getElementById("select-teacher").value;
+        const teacherObj = appState.teachers.find(t => t.id === tId);
+        const subject = document.getElementById("select-curriculum-subject").value;
+        const section = document.getElementById("select-section").value;
+        const units = document.getElementById("input-academic-units").value;
+        const year = document.getElementById("select-school-year").value;
+        const sem = document.getElementById("select-semester").value;
+
+        appState.assignments.push({
+          id: `ASM-${appState.assignments.length + 1}`,
+          teacherId: tId,
+          teacherName: teacherObj ? teacherObj.name : "Unknown",
+          subject, section, units, year, sem
+        });
+
+        assignForm.reset();
+        renderAllTables();
+        triggerAlert("Faculty member assigned to designated track module matrix location.");
+      });
+
+
+      // --- DYNAMIC EVENT DELEGATION LISTENER TREE (Edit, Drop, Login Interactions) ---
+      document.body.addEventListener("click", (e) => {
+        const target = e.target;
+
+        // Delete / Drop Interceptors
+        if (target.closest(".delete-teacher")) {
+          const rowId = target.closest("tr").getAttribute("data-id");
+          appState.teachers = appState.teachers.filter(t => t.id !== rowId);
+          renderAllTables();
+          triggerAlert("Teacher entry safely purged.", "danger");
+        }
+        if (target.closest(".drop-dept")) {
+          const idx = target.closest(".drop-dept").getAttribute("data-idx");
+          appState.departments.splice(idx, 1);
+          renderAllTables();
+        }
+        if (target.closest(".drop-sec")) {
+          const idx = target.closest(".drop-sec").getAttribute("data-idx");
+          appState.sections.splice(idx, 1);
+          renderAllTables();
+        }
+        if (target.closest(".drop-curr")) {
+          const idx = target.closest(".drop-curr").getAttribute("data-idx");
+          appState.curriculums.splice(idx, 1);
+          renderAllTables();
+        }
+        if (target.closest(".drop-assign")) {
+          const idx = target.closest(".drop-assign").getAttribute("data-idx");
+          appState.assignments.splice(idx, 1);
+          renderAllTables();
+          triggerAlert("Assignment mapping record decoupled.", "danger");
+        }
+
+        // Edit Profile Route Interception Handler
+        if (target.closest(".edit-teacher")) {
+          const rowId = target.closest("tr").getAttribute("data-id");
+          const teach = appState.teachers.find(t => t.id === rowId);
+          if (teach) {
+            document.getElementById("edit-teacher-id").value = teach.id;
+            document.getElementById("teacher-name-input").value = teach.name;
+            document.getElementById("teacher-email-input").value = teach.email;
+            document.getElementById("teacher-pass-input").value = teach.pass;
+            
+            document.getElementById("teacher-form-title").textContent = `Modify Tracking Profile: ${teach.id}`;
+            document.getElementById("btn-teacher-submit").innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Refactor Profile Entry';
+            document.getElementById("teacher-name-input").focus();
+          }
+        }
+
+        // --- INTERACTIVE SYSTEM OVERLAY: TEACHER COMMAND PANEL ACCESS MAPPING ---
+        if (target.closest(".login-teacher-portal")) {
+          const rowId = target.closest("tr").getAttribute("data-id");
+          const teacherObj = appState.teachers.find(t => t.id === rowId);
+          
+          if (teacherObj) {
+            // Load Context Metadata into Dashboard Simulated View Window
+            document.getElementById("portal-display-name").textContent = teacherObj.name;
+            document.getElementById("portal-display-email").textContent = `Verified Access Token Key Matrix Route: ${teacherObj.email} | Node Key ID: ${teacherObj.id}`;
+            document.getElementById("portal-teacher-title").textContent = `Teacher Command Portal View: ${teacherObj.name}`;
+            
+            // Map Assigned Modules Dynamically from State Storage Array
+            const portalLoadBody = document.getElementById("portal-load-table-body");
+            portalLoadBody.innerHTML = "";
+            
+            const teacherLoad = appState.assignments.filter(a => a.teacherId === teacherObj.id);
+            
+            if (teacherLoad.length === 0) {
+              portalLoadBody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#94a3b8; padding:20px;">No course modules currently mapped to this instructor block.</td></tr>`;
+            } else {
+              teacherLoad.forEach(load => {
+                portalLoadBody.innerHTML += `
+                  <tr>
+                    <td><strong style="color:#0f172a;">${load.subject}</strong></td>
+                    <td><span style="background:#e0f2fe; color:#0369a1; padding:3px 8px; border-radius:4px; font-weight:600; font-size:0.8rem;">${load.section}</span></td>
+                    <td><strong>${load.units}</strong> Lecture Units</td>
+                    <td>S.Y. ${load.year} — ${load.sem}</td>
+                  </tr>`;
+              });
+            }
+
+            // Display Simulation Screen
+            document.getElementById("teacher-portal-overlay").classList.add("active");
+          }
+        }
+      });
+
+      // Close Teacher Portal Dashboard Simulation Window
+      document.getElementById("close-portal-btn").addEventListener("click", () => {
+        document.getElementById("teacher-portal-overlay").classList.remove("active");
+      });
+
+      // Universal Real-time Search Handler Implementation
+      document.querySelectorAll(".table-search-input").forEach(searchField => {
+        searchField.addEventListener("input", (e) => {
+          const targetTableId = e.target.getAttribute("data-target-table");
+          const query = e.target.value.toLowerCase();
+          const rows = document.querySelectorAll(`#${targetTableId} tbody tr`);
+          
+          rows.forEach(row => {
+            row.style.display = row.textContent.toLowerCase().includes(query) ? "" : "none";
+          });
+        });
+      });
+
+      // --- APP RUNTIME PRELOAD EXECUTION ---
+      renderAllTables();
+    });
+  </script>
+</body>
+
+</html>
