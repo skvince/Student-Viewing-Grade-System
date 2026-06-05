@@ -1,4 +1,86 @@
-:root {
+<?php require_once __DIR__ . '/inc/functions.php'; ?>
+<?php
+$teacherSaveError = '';
+
+// Handle add teacher form submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_teacher'])) {
+  $name = trim($_POST['name'] ?? '');
+  $email = trim($_POST['email'] ?? '');
+  $password = $_POST['password'] ?? '';
+  $department = trim($_POST['department'] ?? '');
+
+  if ($name) {
+    $parts = preg_split('/\s+/', $name);
+    $lastname = strtolower(preg_replace('/[^a-z]/', '', end($parts) ?: $name));
+    if (! $email) {
+      $email = $lastname . '@cscqc.edu.ph';
+    }
+    if (! $password) {
+      $password = $lastname;
+    }
+
+    $conn = db_connect();
+    if ($conn) {
+      $hash = password_hash($password, PASSWORD_DEFAULT);
+      $insertSql = "INSERT INTO teachers (name, email, password_hash, department) VALUES (?, ?, ?, ?)";
+      $stmt = $conn->prepare($insertSql);
+      if (! $stmt && strpos($conn->error, 'Unknown column') !== false && strpos($conn->error, 'password_hash') !== false) {
+        $insertSql = "INSERT INTO teachers (name, email, password, department) VALUES (?, ?, ?, ?)";
+        $stmt = $conn->prepare($insertSql);
+      }
+
+      if ($stmt) {
+        if ($stmt->bind_param('ssss', $name, $email, $hash, $department) && $stmt->execute()) {
+          $newId = $conn->insert_id;
+          if ($newId) {
+            $code = sprintf('T-%03d', $newId);
+            $update = $conn->prepare("UPDATE teachers SET teacher_id = ? WHERE id = ?");
+            if ($update) {
+              if (! $update->bind_param('si', $code, $newId) || ! $update->execute()) {
+                $teacherSaveError = 'Teacher ID update failed: ' . $update->error;
+              }
+              $update->close();
+            } else {
+              $teacherSaveError = 'Teacher ID update prepare failed: ' . $conn->error;
+            }
+          }
+          audit_log('create_teacher');
+        } else {
+          $teacherSaveError = 'Teacher insert failed: ' . $stmt->error;
+        }
+        $stmt->close();
+      } else {
+        $teacherSaveError = 'Teacher insert prepare failed: ' . $conn->error;
+      }
+      $conn->close();
+    } else {
+      $teacherSaveError = 'Database connection failed';
+    }
+  } else {
+    $teacherSaveError = 'Teacher name is required.';
+  }
+
+  if ($teacherSaveError) {
+    // Keep the form visible and show the error instead of redirecting if save failed.
+  } else {
+    header('Location: ' . $_SERVER['PHP_SELF']);
+    exit;
+  }
+}
+?>
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CSCQC Portal</title>
+  <link rel="icon" type="image/png" href="https://cscqcph.com/images/bg/cscqcph.png" />
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+<style>
+  :root {
       --bg-color: #f1f4f2;
       --sidebar-bg: #ffffff;
       --text-color: #333333;
@@ -56,9 +138,9 @@
     }
 
     /* --- SIDEBAR STYLE --- */
-    .sidebar {
-      background-color: var(--sidebar-bg);
-      border-right: 1px solid var(--border-color);
+    .sidebar {  
+      background-color: var(--sidebar-bg);  
+      border-right: 1px solid var(--border-color);  
       display: flex;
       flex-direction: column;
       justify-content: space-between;
@@ -102,7 +184,8 @@
       display: none;
     }
 
-    .nav-menu label {
+    .nav-menu label,
+    .nav-menu a {
       display: flex;
       align-items: center;
       padding: 12px 24px;
@@ -113,16 +196,19 @@
       transition: all 0.2s;
       margin-bottom: 4px;
       border-left: 4px solid transparent;
+      text-decoration: none;
     }
 
-    .nav-menu label i {
+    .nav-menu label i,
+    .nav-menu a i {
       margin-right: 12px;
       font-size: 1.1rem;
       width: 20px;
       text-align: center;
     }
 
-    .nav-menu label:hover {
+    .nav-menu label:hover,
+    .nav-menu a:hover {
       background-color: #f9fafb;
       color: var(--primary-green);
     }
@@ -544,6 +630,43 @@
       cursor: pointer;
     }
 
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(15, 23, 42, 0.4);
+      backdrop-filter: blur(10px);
+      z-index: 999;
+      padding: 24px;
+    }
+
+    .teacher-form-card {
+      background-color: #ffffff;
+      border: 1px solid #d1d5db;
+      border-radius: 18px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      position: relative;
+      max-width: 720px;
+      width: 100%;
+    }
+
+    .teacher-form-close {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      background: transparent;
+      border: none;
+      color: #6b7280;
+      font-size: 1.1rem;
+      cursor: pointer;
+      padding: 8px;
+      line-height: 1;
+    }
+
     .grid-2col {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -553,6 +676,12 @@
     .grid-3col {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .form-stack {
+      display: grid;
+      grid-template-columns: 1fr;
       gap: 20px;
     }
 
@@ -637,3 +766,194 @@
         justify-content: center;
       }
     }
+</style>
+</head>
+<body>
+  <input type="checkbox" id="sidebar-toggle" />
+<header class="mobile-header">
+    <div class="brand" style="padding: 0; margin: 0">
+      <i class="fa-solid fa-graduation-cap" style="font-size: 1.5rem"></i>
+      <div class="brand-text">
+        <h2 style="font-size: 0.9rem">Admin Panel</h2>
+      </div>
+    </div>
+    <label for="sidebar-toggle" class="menu-toggle-btn">
+      <i class="fa-solid fa-bars"></i>
+    </label>
+  </header>
+  <input type="radio" name="nav-tabs" id="tab-dashboard" class="tab-switch" />
+  <input type="radio" name="nav-tabs" id="tab-teachers" checked class="tab-switch" />
+  <input type="radio" name="nav-tabs" id="tab-sec-dept" class="tab-switch" />
+  <input type="radio" name="nav-tabs" id="tab-students" class="tab-switch" />
+  <input type="radio" name="nav-tabs" id="tab-assign" class="tab-switch" />
+
+  <aside class="sidebar">
+    <div>
+      <div class="brand">
+        <i class="fa-solid fa-graduation-cap"></i>
+        <div class="brand-text">
+          <h2>Admin Panel</h2>
+          <p>CSCQC</p>
+        </div>
+      </div>
+      <nav class="nav-menu" aria-label="Main Navigation">
+        <a href="admin.php" class="nav-link"><i class="fa-solid fa-table-cells-large"></i> Dashboard</a>
+        <a href="teachers.php" class="nav-link"><i class="fa-solid fa-users"></i> Teachers</a>
+        <a href="section.php" class="nav-link"><i class="fa-solid fa-book-open"></i> Section & Dept</a>
+        <a href="students.php" class="nav-link"><i class="fa-solid fa-user-graduate"></i> Students</a>
+        <a href="assign.php" class="nav-link"><i class="fa-solid fa-gear"></i> Assign Module</a>
+      </nav>
+    </div>
+    <a href="#" class="logout-btn">
+      <i class="fa-solid fa-right-from-bracket"></i> Logout
+    </a>
+  </aside>
+  <div class="main-content">
+    <div class="global-term-container">
+      <div class="filter-group">
+        <label for="global-filter-year">
+          <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
+          Academic Year:
+        </label>
+        <select id="global-filter-year" class="global-select">
+          <option value="2025-2026">2025–2026</option>
+          <option value="2024-2025">2024–2025</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label for="global-filter-sem">
+          <i class="fa-solid fa-clock" aria-hidden="true"></i> Semester:
+        </label>
+        <select id="global-filter-sem" class="global-select">
+          <option value="1st Semester">1st Semester</option>
+          <option value="2nd Semester">2nd Semester</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="tab-content" style="display: block;">
+      <h1 class="view-title">Teachers Management</h1>
+      <p class="view-subtitle">Manage Teachers Account</p>
+
+      <div class="panel-block">
+        <div class="block-header" style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              flex-wrap: wrap;
+              gap: 15px;
+              margin-bottom: 15px;
+            ">
+          <h2 class="block-title" style="margin: 0">Teachers Registry</h2>
+          <div class="header-actions" style="display: flex; gap: 15px; align-items: center">
+            <!-- Local Table Search -->
+            <div class="search-wrapper" style="position: relative; min-width: 250px">
+              <i class="fa-solid fa-magnifying-glass" style="
+                    position: absolute;
+                    left: 10px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    color: #aaa;
+                  "></i>
+              <input type="text" class="table-search-input" placeholder="Search teachers..." style="
+                    width: 100%;
+                    padding: 6px 12px 6px 32px;
+                    border-radius: 4px;
+                    border: 1px solid #ccc;
+                  " />
+            </div>
+            <button type="button" id="btn-add-teacher" class="btn-add" style="<?php echo $teacherSaveError ? 'display:none;' : ''; ?>" onclick="var m = document.getElementById('teacher-modal-backdrop'); if (!m) return; m.style.display = 'flex'; this.style.display = 'none';">
+              <i class="fa-solid fa-plus"></i> Add Teacher
+            </button>
+          </div>
+        </div>
+        <div id="teacher-modal-backdrop" class="modal-backdrop" style="display:<?php echo $teacherSaveError ? 'flex' : 'none'; ?>;">
+          <div class="teacher-form-card">
+            <button type="button" class="teacher-form-close" onclick="document.getElementById('teacher-modal-backdrop').style.display='none'; document.getElementById('btn-add-teacher').style.display='inline-flex';">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+            <?php if ($teacherSaveError): ?>
+              <p style="color:#b91c1c; margin-bottom: 16px;"><?php echo htmlspecialchars($teacherSaveError); ?></p>
+            <?php endif; ?>
+            <div class="student-form-header">
+              <h3>Add Teacher</h3>
+              <p>Enter the teacher details below.</p>
+            </div>
+            <form method="post">
+              <div class="form-stack">
+                <div class="form-group">
+                  <label for="name">Name</label>
+                  <input name="name" id="name" class="form-control" required value="<?php echo htmlspecialchars($_POST['name'] ?? ''); ?>" />
+                </div>
+                <div class="form-group">
+                  <label for="email">Email</label>
+                  <input name="email" id="email" type="email" class="form-control" value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>" />
+                </div>
+                <div class="form-group">
+                  <label for="department">Department</label>
+                  <input name="department" id="department" type="text" class="form-control" value="<?php echo htmlspecialchars($_POST['department'] ?? ''); ?>" />
+                </div>
+                <div class="form-group">
+                  <label for="password">Password</label>
+                  <input name="password" id="password" type="password" class="form-control" />
+                </div>
+              </div>
+              <div class="form-buttons-row card-action-row">
+                <button type="submit" name="add_teacher" class="btn-submit">Save Teacher</button>
+                <button type="button" onclick="document.getElementById('teacher-modal-backdrop').style.display='none'; document.getElementById('btn-add-teacher').style.display='inline-flex';" class="btn-cancel">Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table id="teachers-table">
+            <thead>
+              <tr>
+                <th>T-ID</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Department</th>
+                <th>Password</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+<?php
+$conn = db_connect();
+if ($conn) {
+    $res = $conn->query("SELECT teacher_id, name, email, department FROM teachers ORDER BY teacher_id DESC");
+    if ($res) {
+        if ($res->num_rows) {
+            while ($row = $res->fetch_assoc()) {
+                echo '<tr>';
+                echo '<td>' . htmlspecialchars($row['teacher_id']) . '</td>';
+                echo '<td>' . htmlspecialchars($row['name']) . '</td>';
+                echo '<td>' . htmlspecialchars($row['email']) . '</td>';
+                echo '<td>' . htmlspecialchars($row['department'] ?? '') . '</td>';
+                echo '<td>••••••••</td>';
+                echo '<td class="actions-cell">';
+                echo '<i class="fa-solid fa-pen-to-square"></i>';
+                echo '<i class="fa-solid fa-trash-can"></i>';
+                echo '</td>';
+                echo '</tr>';
+            }
+        }
+        if (!$res->num_rows) {
+            echo '<tr><td colspan="6" style="text-align:center; padding:18px;">No teachers found.</td></tr>';
+        }
+    } else {
+        echo '<tr><td colspan="6" style="text-align:center; padding:18px;">Query error: ' . htmlspecialchars($conn->error) . '</td></tr>';
+    }
+    $conn->close();
+} else {
+    echo '<tr><td colspan="6" style="text-align:center; padding:18px;">Database unavailable.</td></tr>';
+}
+?>
+            </tbody>
+          </table>
+        </div>
+    </div>
+  </div>
+</body>
+</html>

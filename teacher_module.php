@@ -1,3 +1,4 @@
+<?php require_once __DIR__ . '/inc/functions.php'; ?>
 <!doctype html>
 <html lang="en">
   <head>
@@ -454,25 +455,9 @@
             <i class="fa-solid fa-angle-up" aria-hidden="true"></i>
           </div>
 
-          <button type="button" class="section-row-btn" data-academic-year="2025-2026" data-semester="1st Semester" data-year="1st Year" data-section-name="IT-1A–1st Year" data-subject="Introduction to Computing" data-students='[
-            {"id": "2024-005", "name": "Zoe Alcantara"},
-            {"id": "2024-001", "name": "John Dela Cruz"},
-            {"id": "2024-003", "name": "Abigail Fernandez"},
-            {"id": "2024-002", "name": "Maria Santos"},
-            {"id": "2024-004", "name": "Blessing Aguinaldo"}
-          ]'>
-            <span>IT-1A–1st Year</span>
-            <span class="row-subject-tag">Introduction to Computing</span>
-          </button>
-          
-          <button type="button" class="section-row-btn" data-academic-year="2025-2026" data-semester="2nd Semester" data-year="2nd Year" data-section-name="IT-2B–2nd Year" data-subject="Data Structures and Algorithms" data-students='[
-            {"id": "2023-012", "name": "Marcus Reyes"},
-            {"id": "2023-002", "name": "Clara Mendoza"},
-            {"id": "2023-009", "name": "Alexander Wright"}
-          ]'>
-            <span>IT-2B–2nd Year</span>
-            <span class="row-subject-tag">Data Structures and Algorithms</span>
-          </button>
+          <div class="empty-section-message" style="padding: 24px; text-align: center; color: #666;">
+            No sections assigned yet.
+          </div>
         </div>
       </section>
 
@@ -631,13 +616,13 @@
                 <td><strong>${student.id}</strong></td>
                 <td>${student.name}</td>
                 <td style="text-align: center;">
-                  <input type="number" min="0" max="100" class="grade-input prelim-field" placeholder="90">
+                  <input type="number" min="0" max="100" class="grade-input prelim-field" placeholder="">
                 </td>
                 <td style="text-align: center;">
-                  <input type="number" min="0" max="100" class="grade-input midterm-field" placeholder="90">
+                  <input type="number" min="0" max="100" class="grade-input midterm-field" placeholder="">
                 </td>
                 <td style="text-align: center;">
-                  <input type="number" min="0" max="100" class="grade-input final-field" placeholder="90">
+                  <input type="number" min="0" max="100" class="grade-input final-field" placeholder="">
                 </td>
                 <td style="text-align: center;">
                   <span class="calculated-final" id="avg-${student.id}">--</span>

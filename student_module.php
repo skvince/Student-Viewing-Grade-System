@@ -1,3 +1,4 @@
+<?php require_once __DIR__ . '/inc/functions.php'; ?>
 <!doctype html>
 <html lang="en">
   <head>
@@ -301,61 +302,9 @@
                 <th scope="col" style="text-align: right; padding-right: 20px;">Remarks</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody id="student-grades-table-body">
               <tr>
-                <td><strong>CS101</strong></td>
-                <td>Introduction to Programming</td>
-                <td class="text-center">3</td>
-                <td class="text-center">85.00</td>
-                <td class="text-center">90.00</td>
-                <td class="text-center">92.00</td>
-                <td class="text-center">90.40</td>
-                <td class="text-center highlight-gwa">1.50</td>
-                <td style="text-align: right;"><span class="badge-passed">Passed</span></td>
-              </tr>
-              <tr>
-                <td><strong>MATH101</strong></td>
-                <td>College Algebra</td>
-                <td class="text-center">3</td>
-                <td class="text-center">88.00</td>
-                <td class="text-center">87.00</td>
-                <td class="text-center">89.00</td>
-                <td class="text-center">87.40</td>
-                <td class="text-center highlight-gwa">1.75</td>
-                <td style="text-align: right;"><span class="badge-passed">Passed</span></td>
-              </tr>
-              <tr>
-                <td><strong>ENG101</strong></td>
-                <td>English Communication</td>
-                <td class="text-center">3</td>
-                <td class="text-center">90.00</td>
-                <td class="text-center">92.00</td>
-                <td class="text-center">94.00</td>
-                <td class="text-center">92.40</td>
-                <td class="text-center highlight-gwa">1.25</td>
-                <td style="text-align: right;"><span class="badge-passed">Passed</span></td>
-              </tr>
-              <tr>
-                <td><strong>PE101</strong></td>
-                <td>Physical Education</td>
-                <td class="text-center">2</td>
-                <td class="text-center">93.00</td>
-                <td class="text-center">97.00</td>
-                <td class="text-center">97.00</td>
-                <td class="text-center">96.20</td>
-                <td class="text-center highlight-gwa">1.00</td>
-                <td style="text-align: right;"><span class="badge-passed">Passed</span></td>
-              </tr>
-              <tr>
-                <td><strong>NSTP101</strong></td>
-                <td>National Service Training Program</td>
-                <td class="text-center">3</td>
-                <td class="text-center">95.00</td>
-                <td class="text-center">95.00</td>
-                <td class="text-center">95.00</td>
-                <td class="text-center">94.20</td>
-                <td class="text-center highlight-gwa">1.00</td>
-                <td style="text-align: right;"><span class="badge-passed">Passed</span></td>
+                <td colspan="9" style="text-align:center; color:#666; padding: 24px;">No grade records available.</td>
               </tr>
             </tbody>
           </table>
@@ -364,11 +313,11 @@
         <footer class="summary-highlights-strip">
           <div class="metric-item-box">
             <p>Total Registered Units</p>
-            <data value="14">14</data>
+            <data value="0" id="summary-total-units">0</data>
           </div>
           <div class="metric-item-box">
             <p>Subjects Passed</p>
-            <data value="5">5</data>
+            <data value="0" id="summary-subjects-passed">0</data>
           </div>
         </footer>
       </section>
