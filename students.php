@@ -1,5 +1,6 @@
     <?php require_once __DIR__ . '/inc/functions.php'; ?>
     <?php
+    session_start();
     $studentSaveError = '';
     $submittedName = '';
     $submittedEmail = '';
@@ -23,6 +24,72 @@
       }
       header('Location: ' . $_SERVER['PHP_SELF']);
       exit;
+    }
+
+    // Handle update student form submission
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
+      $studentId = intval($_POST['student_id'] ?? 0);
+      $submittedName = trim($_POST['name'] ?? '');
+      $submittedEmail = trim($_POST['email'] ?? '');
+      $submittedSectionId = intval($_POST['section_id'] ?? 0);
+      $password = $_POST['password'] ?? '';
+
+      if (!$studentId || !$submittedName) {
+        $studentSaveError = 'Student ID and name are required.';
+      }
+
+      if (!$studentSaveError) {
+        if (!$submittedSectionId) {
+          $submittedSectionId = null;
+        }
+
+        $conn = db_connect();
+        if ($conn) {
+          if ($password) {
+            $hash = password_hash($password, PASSWORD_DEFAULT);
+            $updateSql = "UPDATE students SET name = ?, email = ?, password_hash = ?, section_id = ? WHERE id = ?";
+            $stmt = $conn->prepare($updateSql);
+            if (!$stmt && strpos($conn->error, 'password_hash') !== false) {
+              $updateSql = "UPDATE students SET name = ?, email = ?, password = ?, section_id = ? WHERE id = ?";
+              $stmt = $conn->prepare($updateSql);
+            }
+            if ($stmt) {
+              if ($stmt->bind_param('sssii', $submittedName, $submittedEmail, $hash, $submittedSectionId, $studentId) && $stmt->execute()) {
+                audit_log('update_student');
+                $stmt->close();
+                $conn->close();
+                header('Location: ' . $_SERVER['PHP_SELF']);
+                exit;
+              } else {
+                $studentSaveError = 'Student update failed: ' . $stmt->error;
+                $stmt->close();
+              }
+            } else {
+              $studentSaveError = 'Student update prepare failed: ' . $conn->error;
+            }
+          } else {
+            $updateSql = "UPDATE students SET name = ?, email = ?, section_id = ? WHERE id = ?";
+            $stmt = $conn->prepare($updateSql);
+            if ($stmt) {
+              if ($stmt->bind_param('ssii', $submittedName, $submittedEmail, $submittedSectionId, $studentId) && $stmt->execute()) {
+                audit_log('update_student');
+                $stmt->close();
+                $conn->close();
+                header('Location: ' . $_SERVER['PHP_SELF']);
+                exit;
+              } else {
+                $studentSaveError = 'Student update failed: ' . $stmt->error;
+                $stmt->close();
+              }
+            } else {
+              $studentSaveError = 'Student update prepare failed: ' . $conn->error;
+            }
+          }
+          $conn->close();
+        } else {
+          $studentSaveError = 'Database connection failed.';
+        }
+      }
     }
 
     // Handle add student form submission
@@ -85,6 +152,9 @@
               }
               if (! $studentSaveError) {
                 audit_log('create_student');
+                // log in the newly created student
+                $_SESSION['user_role'] = 'student';
+                $_SESSION['user_id'] = $newId;
               }
             } else {
               $studentSaveError = 'Student insert failed: ' . $stmt->error;
@@ -100,7 +170,7 @@
       }
 
       if (! $studentSaveError) {
-        header('Location: ' . $_SERVER['PHP_SELF']);
+        header('Location: student_module.php?student_id=' . urlencode((string)$newId));
         exit;
       }
     }
@@ -754,13 +824,24 @@
         .icon-button {
           background: transparent;
           border: none;
-          color: #ef4444;
-          font-size: 1rem;
+          padding: 4px 8px;
+          margin: 0;
+          color: inherit;
           cursor: pointer;
+          font: inherit;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 4px;
+          transition: transform 0.2s ease;
         }
 
         .icon-button:hover {
-          opacity: 0.85;
+          transform: scale(1.1);
+        }
+
+        .icon-button:focus {
+          outline: none;
         }
 
         .btn-cancel {
@@ -978,10 +1059,11 @@
                   <p style="color:#b91c1c; margin-bottom: 16px;"><?php echo htmlspecialchars($studentSaveError); ?></p>
                 <?php endif; ?>
                 <div class="student-form-header">
-                  <h3>Add Student</h3>
-                  <p>Enter the student details below.</p>
+                  <h3 id="form-title">Add Student</h3>
+                  <p id="form-subtitle">Enter the student details below.</p>
                 </div>
-                <form method="post">
+                <form method="post" id="student-form">
+                  <input type="hidden" name="student_id" id="student-id-field" value="">
                   <div class="form-group">
                     <label for="name">Name</label>
                     <input name="name" id="name" class="form-control" required placeholder="Full name" value="<?php echo htmlspecialchars($submittedName); ?>" />
@@ -1004,9 +1086,10 @@
                   <div class="form-group">
                     <label for="password">Password</label>
                     <input name="password" id="password" type="password" class="form-control" placeholder="Optional password" />
+                    <small id="password-help" style="color: #666; margin-top: 4px; display: block;"></small>
                   </div>
                   <div class="form-buttons-row card-action-row">
-                    <button type="submit" name="add_student" class="btn-submit">Register</button>
+                    <button type="submit" id="submit-btn" name="add_student" class="btn-submit">Register</button>
                   </div>
                 </form>
               </div>
@@ -1028,7 +1111,7 @@
 $conn = db_connect();
 if ($conn) {
     $res = $conn->query(
-        "SELECT s.id, s.student_id, s.name, s.email, sec.name AS section_name, sec.section_code " .
+        "SELECT s.id, s.student_id, s.name, s.email, s.section_id, sec.name AS section_name, sec.section_code " .
         "FROM students s " .
         "LEFT JOIN sections sec ON s.section_id = sec.id " .
         "ORDER BY s.id DESC"
@@ -1044,13 +1127,8 @@ if ($conn) {
                 echo '<td>' . htmlspecialchars($sectionDisplay) . '</td>';
                 echo '<td>••••••</td>';
                 echo '<td class="actions-cell">';
-                echo '<form method="post" style="display:inline;margin:0;padding:0;">';
-                echo '<input type="hidden" name="delete_student" value="1">';
-                echo '<input type="hidden" name="student_id" value="' . intval($row['id']) . '">';
-                echo '<button type="submit" class="icon-button" onclick="return confirm(\'Delete this student?\');" title="Delete student">';
-                echo '<i class="fa-solid fa-trash-can"></i>';
-                echo '</button>';
-                echo '</form>';
+                echo '<button type="button" class="icon-button" title="Edit student" onclick="editStudent(' . intval($row['id']) . ', ' . htmlspecialchars(json_encode($row['name'])) . ', ' . htmlspecialchars(json_encode($row['email'])) . ', ' . htmlspecialchars(json_encode($row['section_id'] ?? 0)) . ')"><i class="fa-solid fa-pen-to-square"></i></button>';
+                echo '<button type="button" class="icon-button" title="Delete student" onclick="if(confirm(\'Delete this student?\')) { deleteStudent(' . intval($row['id']) . '); }"><i class="fa-solid fa-trash-can"></i></button>';
                 echo '</td>';
                 echo '</tr>';
             }
@@ -1071,5 +1149,51 @@ if ($conn) {
           </div>
         </div>
       </div>
+      <script>
+        function editStudent(id, name, email, sectionId) {
+          document.getElementById('student-id-field').value = id;
+          document.getElementById('name').value = name;
+          document.getElementById('email').value = email;
+          document.getElementById('section_id').value = sectionId || '';
+          document.getElementById('password').value = '';
+          document.getElementById('password-help').textContent = 'Leave blank to keep existing password';
+          document.getElementById('form-title').textContent = 'Edit Student';
+          document.getElementById('form-subtitle').textContent = 'Update the student details below.';
+          document.getElementById('submit-btn').name = 'update_student';
+          document.getElementById('submit-btn').textContent = 'Update Student';
+          document.getElementById('modal-backdrop').style.display = 'flex';
+          document.getElementById('btn-add-student').style.display = 'none';
+        }
+
+        function resetForm() {
+          document.getElementById('student-id-field').value = '';
+          document.getElementById('student-form').reset();
+          document.getElementById('password-help').textContent = '';
+          document.getElementById('form-title').textContent = 'Add Student';
+          document.getElementById('form-subtitle').textContent = 'Enter the student details below.';
+          document.getElementById('submit-btn').name = 'add_student';
+          document.getElementById('submit-btn').textContent = 'Register';
+        }
+
+        function deleteStudent(id) {
+          const form = document.createElement('form');
+          form.method = 'POST';
+          form.innerHTML = '<input type="hidden" name="delete_student" value="1"><input type="hidden" name="student_id" value="' + id + '">';
+          document.body.appendChild(form);
+          form.submit();
+        }
+
+        document.querySelectorAll('.table-search-input').forEach(input => {
+          input.addEventListener('input', function() {
+            const query = this.value.toLowerCase();
+            document.querySelectorAll('#students-table tbody tr').forEach(row => {
+              row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
+            });
+          });
+        });
+
+        // Reset form when closing modal
+        document.getElementById('btn-add-student').addEventListener('click', resetForm);
+      </script>
     </body>
     </html>

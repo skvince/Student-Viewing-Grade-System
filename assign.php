@@ -4,6 +4,7 @@ require_once __DIR__ . '/inc/functions.php';
 $teachers = [];
 $sections = [];
 $assignments = [];
+$saveError = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_assignment'])) {
     $assignmentId = intval($_POST['assignment_id'] ?? 0);
@@ -31,21 +32,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_assignment'])) {
     $schoolYear = trim($_POST['school_year'] ?? '');
     $semester = trim($_POST['semester'] ?? '');
 
-    if ($teacherId && $sectionId && $module) {
+    if (!$teacherId || !$sectionId || !$module) {
+        $saveError = 'Teacher, Section, and Module are required.';
+    } else {
         $conn = db_connect();
         if ($conn) {
             $stmt = $conn->prepare("INSERT INTO assignments (teacher_id, section_id, module, school_year, semester) VALUES (?, ?, ?, ?, ?)");
             if ($stmt) {
                 $stmt->bind_param('iisss', $teacherId, $sectionId, $module, $schoolYear, $semester);
-                $stmt->execute();
-                $stmt->close();
-                audit_log('create_assignment');
+                if ($stmt->execute()) {
+                    $stmt->close();
+                    audit_log('create_assignment');
+                    $conn->close();
+                    header('Location: ' . $_SERVER['PHP_SELF']);
+                    exit;
+                } else {
+                    $saveError = 'Assignment save failed: ' . $stmt->error;
+                    $stmt->close();
+                }
+            } else {
+                $saveError = 'Assignment prepare failed: ' . $conn->error;
             }
             $conn->close();
+        } else {
+            $saveError = 'Database connection failed';
         }
     }
-    header('Location: ' . $_SERVER['PHP_SELF']);
-    exit;
 }
 
 $conn = db_connect();
@@ -564,16 +576,24 @@ if ($conn) {
     .icon-button {
       background: transparent;
       border: none;
-      padding: 0;
+      padding: 4px 8px;
       margin: 0;
       color: inherit;
       cursor: pointer;
       font: inherit;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      transition: transform 0.2s ease;
+    }
+
+    .icon-button:hover {
+      transform: scale(1.1);
     }
 
     .icon-button:focus {
-      outline: 2px solid rgba(14, 68, 41, 0.4);
-      outline-offset: 2px;
+      outline: none;
     }
 
     .fa-pen-to-square {
@@ -953,7 +973,7 @@ if ($conn) {
                   <option value="" disabled selected hidden>
                     Select subject module...
                   </option>
-                  <option value="IT101">IT101 - Intro to Programming</option>
+                
                 </select>
               </div>
             </div>
@@ -975,7 +995,7 @@ if ($conn) {
 
               <div class="form-group">
                 <label for="select-school-year">School Year Term</label>
-                <select id="select-school-year" class="form-control" required>
+                <select id="select-school-year" name="school_year" class="form-control" required>
                   <option value="" disabled selected hidden>
                     Select school year...
                   </option>
@@ -986,7 +1006,7 @@ if ($conn) {
 
             <div class="form-group">
               <label for="select-semester">Active Session Semester</label>
-              <select id="select-semester" class="form-control" required>
+              <select id="select-semester" name="semester" class="form-control" required>
                 <option value="" disabled selected hidden>
                   Select academic term semester...
                 </option>
@@ -1086,21 +1106,41 @@ if (count($assignments)) {
       const assignmentTableBody = document.getElementById('assignment-table-body');
       const assignmentSearchInput = document.querySelector('#assign-form-block .table-search-input');
 
+      function getAssignedModules() {
+        const assignedModules = new Set();
+        Array.from(assignmentTableBody.querySelectorAll('tr')).forEach(row => {
+          const moduleCell = row.querySelector('td:nth-child(2)');
+          if (moduleCell) {
+            assignedModules.add(moduleCell.textContent.trim());
+          }
+        });
+        return assignedModules;
+      }
+
       function addSubjectRow(code, title, year, semester) {
         const row = document.createElement('tr');
+        const assignedModules = getAssignedModules();
+        const isAssigned = assignedModules.has(code);
+        
         row.innerHTML = `
           <td>${code}</td>
           <td>${title}</td>
           <td>${year}</td>
           <td>${semester}</td>
           <td class="actions-cell">
-            <i class="fa-solid fa-trash-can" role="button" aria-label="Delete subject"></i>
+            ${isAssigned 
+              ? '<span title="Cannot delete: This subject is already assigned" style="color: #999; cursor: not-allowed;"><i class="fa-solid fa-lock" style="color: #999;"></i></span>' 
+              : '<i class="fa-solid fa-trash-can" role="button" aria-label="Delete subject" style="color: #ef4444; cursor: pointer;"></i>'}
           </td>
         `;
-        row.querySelector('.fa-trash-can').addEventListener('click', () => {
-          row.remove();
-          removeSubjectOption(code);
-        });
+        
+        if (!isAssigned) {
+          row.querySelector('.fa-trash-can').addEventListener('click', () => {
+            row.remove();
+            removeSubjectOption(code);
+          });
+        }
+        
         subjectTableBody.appendChild(row);
       }
 

@@ -1,4 +1,37 @@
 <?php require_once __DIR__ . '/inc/functions.php'; ?>
+<?php
+session_start();
+// allow entry if a student_id query param is provided (redirect from creation),
+// otherwise require an existing logged-in student session role.
+if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'student') {
+  if (isset($_GET['student_id'])) {
+    $_SESSION['user_role'] = 'student';
+    $_SESSION['user_id'] = intval($_GET['student_id']);
+  } else {
+    header('Location: login.php');
+    exit;
+  }
+}
+// fetch student name for display
+$userName = '';
+if (!empty($_SESSION['user_id'])) {
+  $conn = db_connect();
+  if ($conn) {
+    $id = intval($_SESSION['user_id']);
+    $stmt = $conn->prepare('SELECT name FROM students WHERE id = ? LIMIT 1');
+    if ($stmt) {
+      $stmt->bind_param('i', $id);
+      $stmt->execute();
+      $res = $stmt->get_result();
+      if ($res && $row = $res->fetch_assoc()) {
+        $userName = $row['name'] ?? '';
+      }
+      $stmt->close();
+    }
+    $conn->close();
+  }
+}
+?>
 <!doctype html>
 <html lang="en">
   <head>
@@ -257,11 +290,11 @@
       <div class="user-controls">
         <div class="student-profile">
           <i class="fa-solid fa-circle-user"></i>
-          <span>Jane O. Smith</span>
+          <span><?php echo htmlspecialchars($userName ?: ''); ?></span>
         </div>
-        <button type="button" class="logout-btn">
+        <a href="login.php?logout=1" class="logout-btn">
           <i class="fa-solid fa-right-from-bracket"></i> Logout
-        </button>
+        </a>
       </div>
     </header>
 

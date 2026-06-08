@@ -1,4 +1,37 @@
 <?php require_once __DIR__ . '/inc/functions.php'; ?>
+<?php
+session_start();
+// allow entry if a teacher_id query param is provided (redirect from creation),
+// otherwise require an existing logged-in teacher session role.
+if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'teacher') {
+  if (isset($_GET['teacher_id'])) {
+    $_SESSION['user_role'] = 'teacher';
+    $_SESSION['user_id'] = intval($_GET['teacher_id']);
+  } else {
+    header('Location: login.php');
+    exit;
+  }
+}
+// fetch teacher name for display
+$userName = '';
+if (!empty($_SESSION['user_id'])) {
+  $conn = db_connect();
+  if ($conn) {
+    $id = intval($_SESSION['user_id']);
+    $stmt = $conn->prepare('SELECT name FROM teachers WHERE id = ? LIMIT 1');
+    if ($stmt) {
+      $stmt->bind_param('i', $id);
+      $stmt->execute();
+      $res = $stmt->get_result();
+      if ($res && $row = $res->fetch_assoc()) {
+        $userName = $row['name'] ?? '';
+      }
+      $stmt->close();
+    }
+    $conn->close();
+  }
+}
+?>
 <!doctype html>
 <html lang="en">
   <head>
@@ -409,9 +442,12 @@
         </nav>
       </div>
 
-      <a href="#" class="logout-btn">
-        <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Logout
-      </a>
+      <div style="padding: 0 20px 20px 20px; text-align: center;">
+        <div style="margin-bottom:8px; color:#374151; font-weight:600;"><?php echo htmlspecialchars($userName ?: ''); ?></div>
+        <a href="login.php?logout=1" class="logout-btn">
+          <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Logout
+        </a>
+      </div>
     </aside>
 
     <main class="main-content">
@@ -484,7 +520,7 @@
               </tbody>
             </table>
 
-            <button type="button" class="btn-save-all" onclick="alert('Student data logs updated securely!')">
+            <button type="submit" class="btn-save-all">
               <i class="fa-solid fa-floppy-disk"></i> Save Marks
             </button>
 
@@ -616,13 +652,13 @@
                 <td><strong>${student.id}</strong></td>
                 <td>${student.name}</td>
                 <td style="text-align: center;">
-                  <input type="number" min="0" max="100" class="grade-input prelim-field" placeholder="">
+                  <input type="number" min="0" max="100" name="prelim_${student.id}" class="grade-input prelim-field" placeholder="">
                 </td>
                 <td style="text-align: center;">
-                  <input type="number" min="0" max="100" class="grade-input midterm-field" placeholder="">
+                  <input type="number" min="0" max="100" name="midterm_${student.id}" class="grade-input midterm-field" placeholder="">
                 </td>
                 <td style="text-align: center;">
-                  <input type="number" min="0" max="100" class="grade-input final-field" placeholder="">
+                  <input type="number" min="0" max="100" name="final_${student.id}" class="grade-input final-field" placeholder="">
                 </td>
                 <td style="text-align: center;">
                   <span class="calculated-final" id="avg-${student.id}">--</span>

@@ -1,4 +1,119 @@
 <?php require_once __DIR__ . '/inc/functions.php'; ?>
+<?php
+session_start();
+$loginError = '';
+// handle logout action
+if (isset($_GET['logout'])) {
+  session_unset();
+  session_destroy();
+  session_start();
+  $loginError = 'You have been logged out.';
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  $username = trim($_POST['username'] ?? '');
+  $password = $_POST['password'] ?? '';
+
+  // allow local admin credentials as fallback
+  if ($username === 'admin' && $password === '123') {
+    $_SESSION['username'] = 'admin';
+    $_SESSION['role'] = 'admin';
+    header('Location: admin.php');
+    exit;
+  }
+
+  if (! $username || ! $password) {
+    $loginError = 'Username and password are required.';
+  } else {
+    $conn = db_connect();
+    if (! $conn) {
+      $loginError = 'Database connection failed.';
+    } else {
+      // Try teacher first
+      $userFound = false;
+      $stmt = $conn->prepare("SELECT id, teacher_id, email, password_hash FROM teachers WHERE teacher_id = ? OR email = ? LIMIT 1");
+      if ($stmt) {
+        $stmt->bind_param('ss', $username, $username);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        if ($res && $row = $res->fetch_assoc()) {
+          $storedHash = $row['password_hash'] ?? '';
+          if ($storedHash && password_verify($password, $storedHash)) {
+            $_SESSION['user_role'] = 'teacher';
+            $_SESSION['user_id'] = $row['id'];
+            $stmt->close();
+            $conn->close();
+            header('Location: teacher_module.php?teacher_id=' . urlencode((string)$row['id']));
+            exit;
+          }
+          // if password_hash absent or verify failed, fall through to check legacy password column
+        }
+        $stmt->close();
+      }
+
+      // Legacy teachers table might use `password` column instead of `password_hash`
+      $stmt = $conn->prepare("SELECT id, teacher_id, email, password FROM teachers WHERE teacher_id = ? OR email = ? LIMIT 1");
+      if ($stmt) {
+        $stmt->bind_param('ss', $username, $username);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        if ($res && $row = $res->fetch_assoc()) {
+          if (isset($row['password']) && $row['password'] === $password) {
+            $_SESSION['user_role'] = 'teacher';
+            $_SESSION['user_id'] = $row['id'];
+            $stmt->close();
+            $conn->close();
+            header('Location: teacher_module.php?teacher_id=' . urlencode((string)$row['id']));
+            exit;
+          }
+        }
+        $stmt->close();
+      }
+
+      // Try student
+      $stmt = $conn->prepare("SELECT id, student_id, email, password_hash FROM students WHERE student_id = ? OR email = ? LIMIT 1");
+      if ($stmt) {
+        $stmt->bind_param('ss', $username, $username);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        if ($res && $row = $res->fetch_assoc()) {
+          $storedHash = $row['password_hash'] ?? '';
+          if ($storedHash && password_verify($password, $storedHash)) {
+            $_SESSION['user_role'] = 'student';
+            $_SESSION['user_id'] = $row['id'];
+            $stmt->close();
+            $conn->close();
+            header('Location: student_module.php?student_id=' . urlencode((string)$row['id']));
+            exit;
+          }
+        }
+        $stmt->close();
+      }
+
+      // Legacy students password check
+      $stmt = $conn->prepare("SELECT id, student_id, email, password FROM students WHERE student_id = ? OR email = ? LIMIT 1");
+      if ($stmt) {
+        $stmt->bind_param('ss', $username, $username);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        if ($res && $row = $res->fetch_assoc()) {
+          if (isset($row['password']) && $row['password'] === $password) {
+            $_SESSION['user_role'] = 'student';
+            $_SESSION['user_id'] = $row['id'];
+            $stmt->close();
+            $conn->close();
+            header('Location: student_module.php?student_id=' . urlencode((string)$row['id']));
+            exit;
+          }
+        }
+        $stmt->close();
+      }
+
+      $conn->close();
+      $loginError = 'Invalid username or password.';
+    }
+  }
+}
+?>
 <!doctype html>
 <html lang="en">
   <head>
@@ -166,12 +281,16 @@
             <h1>Sign In</h1>
           </header>
 
-          <form>
-            <label for="email">Email Address</label>
-            <input type="email" id="email" placeholder="admin@gmail.com" required />
+          <form method="post">
+            <?php if ($loginError): ?>
+              <div style="background:#fde8e8;color:#991b1b;padding:10px;border-radius:6px;margin-bottom:12px;"><?php echo htmlspecialchars($loginError); ?></div>
+            <?php endif; ?>
+
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" placeholder="admin" required />
 
             <label for="password">Password</label>
-            <input type="password" id="password" placeholder="••••" required />
+            <input type="password" id="password" name="password" placeholder="••••" required />
 
             <button type="submit">Login</button>
           </form>

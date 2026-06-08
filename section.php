@@ -2,38 +2,80 @@
 require_once __DIR__ . '/inc/functions.php';
 
 $sections = [];
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_section'])) {
-    $name = trim($_POST['sec_name'] ?? '');
-    $department = trim($_POST['sec_department'] ?? '');
-    $schoolYear = trim($_POST['sec_year'] ?? '');
-    $semester = trim($_POST['sec_semester'] ?? '');
-    $section_code = trim($_POST['sec_code'] ?? '');
-
-    if ($name) {
-        if (! $section_code) {
-            $slug = preg_replace('/[^A-Za-z0-9]+/', '-', strtolower($name));
-            $section_code = 'SEC-' . strtoupper(substr($slug, 0, 5)) . '-' . substr(time(), -4);
-        }
-
-        $conn = db_connect();
-        if ($conn) {
-            $stmt = $conn->prepare("INSERT INTO sections (section_code, name, department, school_year, semester) VALUES (?, ?, ?, ?, ?)");
-            if ($stmt) {
-                $stmt->bind_param('sssss', $section_code, $name, $department, $schoolYear, $semester);
-                $stmt->execute();
-                $stmt->close();
-                audit_log('create_section');
-            }
-            $conn->close();
-        }
-    }
-    header('Location: ' . $_SERVER['PHP_SELF']);
-    exit;
-}
+$departments = [];
+$saveError = '';
+$saveSuccess = '';
 
 $conn = db_connect();
 if ($conn) {
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS departments (" .
+        "id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, " .
+        "department_code VARCHAR(100) NOT NULL, " .
+        "name VARCHAR(255) NOT NULL, " .
+        "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " .
+        "UNIQUE KEY unique_department_code (department_code)" .
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_department'])) {
+        $deptCode = trim($_POST['dept_code'] ?? '');
+        $deptName = trim($_POST['dept_name'] ?? '');
+        if ($deptCode && $deptName) {
+            $stmt = $conn->prepare("INSERT INTO departments (department_code, name) VALUES (?, ?)");
+            if ($stmt) {
+                $stmt->bind_param('ss', $deptCode, $deptName);
+                if ($stmt->execute()) {
+                    $stmt->close();
+                    audit_log('create_department');
+                    header('Location: ' . $_SERVER['PHP_SELF']);
+                    exit;
+                } else {
+                    $saveError = 'Department save failed: ' . $stmt->error;
+                    $stmt->close();
+                }
+            } else {
+                $saveError = 'Department prepare failed: ' . $conn->error;
+            }
+        } else {
+            $saveError = 'Department code and name are required.';
+        }
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_section'])) {
+        $name = trim($_POST['sec_name'] ?? '');
+        $department = trim($_POST['sec_department'] ?? '');
+        $schoolYear = trim($_POST['sec_year'] ?? '');
+        $semester = trim($_POST['sec_semester'] ?? '');
+        $section_code = trim($_POST['sec_code'] ?? '');
+
+        if ($name) {
+            if (! $section_code) {
+                $slug = preg_replace('/[^A-Za-z0-9]+/', '-', strtolower($name));
+                $section_code = 'SEC-' . strtoupper(substr($slug, 0, 5)) . '-' . substr(time(), -4);
+            }
+
+            $stmt = $conn->prepare("INSERT INTO sections (section_code, name, department, school_year, semester) VALUES (?, ?, ?, ?, ?)");
+            if ($stmt) {
+                $stmt->bind_param('sssss', $section_code, $name, $department, $schoolYear, $semester);
+                if ($stmt->execute()) {
+                    $stmt->close();
+                    audit_log('create_section');
+                    header('Location: ' . $_SERVER['PHP_SELF']);
+                    exit;
+                } else {
+                    $saveError = 'Section save failed: ' . $stmt->error;
+                    $stmt->close();
+                }
+            } else {
+                $saveError = 'Section prepare failed: ' . $conn->error;
+            }
+        } else {
+            $saveError = 'Section name is required.';
+        }
+    }
+
+
     foreach (['teacher_id' => "INT UNSIGNED DEFAULT NULL", 'school_year' => "VARCHAR(20) DEFAULT NULL", 'semester' => "VARCHAR(20) DEFAULT NULL"] as $column => $definition) {
         $check = $conn->query("SHOW COLUMNS FROM sections LIKE '{$column}'");
         if ($check && $check->num_rows === 0) {
@@ -42,6 +84,14 @@ if ($conn) {
         if ($check) {
             $check->free();
         }
+    }
+
+    $res = $conn->query("SELECT id, department_code, name FROM departments ORDER BY created_at DESC");
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $departments[] = $row;
+        }
+        $res->free();
     }
 
     $res = $conn->query(
@@ -783,20 +833,27 @@ if ($conn) {
       <h1 class="view-title">Section & Department</h1>
       <div class="view-subtitle">Institutional Divisions</div>
 
+<?php if ($saveError): ?>
+      <div style="background-color: #fde8e8; border: 1px solid #dc2626; color: #991b1b; padding: 16px; border-radius: 8px; margin-bottom: 24px;">
+        <strong>Error:</strong> <?php echo htmlspecialchars($saveError); ?>
+      </div>
+<?php endif; ?>
+
       <!-- Departments Panel Block -->
       <div class="panel-block">
         <div class="block-header">
           <h2 class="block-title">Create / Manage Departments</h2>
         </div>
-        <form id="department-form" onsubmit="event.preventDefault()">
+        <form id="department-form" method="post">
+          <input type="hidden" name="add_department" value="1" />
           <div class="grid-2col">
             <div class="form-group">
               <label for="dept-code-input">Department Code</label>
-              <input type="text" id="dept-code-input" class="form-control" placeholder="Enter department code" required />
+              <input type="text" id="dept-code-input" name="dept_code" class="form-control" placeholder="Enter department code" required />
             </div>
             <div class="form-group">
               <label for="dept-name-input">Department Name Description</label>
-              <input type="text" id="dept-name-input" class="form-control" placeholder="Enter department name" required />
+              <input type="text" id="dept-name-input" name="dept_name" class="form-control" placeholder="Enter department name" required />
             </div>
           </div>
           <div class="form-buttons-row">
@@ -837,7 +894,21 @@ if ($conn) {
                 <th>Actions</th>
               </tr>
             </thead>
-            <tbody id="departments-table-body"></tbody>
+            <tbody id="departments-table-body">
+<?php
+if (count($departments)) {
+    foreach ($departments as $department) {
+        echo '<tr>';
+        echo '<td>' . htmlspecialchars($department['department_code']) . '</td>';
+        echo '<td>' . htmlspecialchars($department['name']) . '</td>';
+        echo '<td class="actions-cell"><i class="fa-solid fa-trash-can"></i></td>';
+        echo '</tr>';
+    }
+} else {
+    echo '<tr><td colspan="3" style="text-align:center; color:#666; padding:18px;">No departments available.</td></tr>';
+}
+?>
+          </tbody>
           </table>
         </div>
       </div>
@@ -876,8 +947,15 @@ if ($conn) {
               </select>
             </div>
             <div class="form-group">
-              <label for="sec-dept-input">Department</label>
-              <input type="text" id="sec-dept-input" name="sec_department" class="form-control" placeholder="Enter department" required />
+              <label for="sec-dept-select">Department</label>
+              <select id="sec-dept-select" name="sec_department" class="form-control" required>
+                <option value="" disabled selected hidden>
+                  Select a department...
+                </option>
+<?php foreach ($departments as $department): ?>
+                <option value="<?php echo htmlspecialchars($department['name']); ?>"><?php echo htmlspecialchars($department['department_code'] . ' - ' . $department['name']); ?></option>
+<?php endforeach; ?>
+              </select>
             </div>
           </div>
           <div class="form-buttons-row">
@@ -957,6 +1035,7 @@ if (count($sections)) {
       const secNameInput = document.getElementById('sec-name-input');
       const secYearSelect = document.getElementById('sec-year-select');
       const secSemSelect = document.getElementById('sec-sem-select');
+      const secDeptSelect = document.getElementById('sec-dept-select');
 
       function renderEmptyRow(tableBody, colspan, message) {
         tableBody.innerHTML = `
@@ -964,6 +1043,26 @@ if (count($sections)) {
             <td colspan="${colspan}" style="text-align:center; color:#666; padding:18px;">${message}</td>
           </tr>
         `;
+      }
+
+      function addDepartmentOption(code, name) {
+        if (!secDeptSelect) return;
+        const optionValue = name;
+        const existing = Array.from(secDeptSelect.options).find(opt => opt.value === optionValue);
+        if (existing) return;
+
+        const option = document.createElement('option');
+        option.value = optionValue;
+        option.textContent = `${code} - ${name}`;
+        secDeptSelect.appendChild(option);
+      }
+
+      function removeDepartmentOption(name) {
+        if (!secDeptSelect) return;
+        const option = Array.from(secDeptSelect.options).find(opt => opt.value === name);
+        if (option) {
+          option.remove();
+        }
       }
 
       function normalizeText(text) {
@@ -981,6 +1080,7 @@ if (count($sections)) {
         `;
         row.querySelector('.fa-trash-can').addEventListener('click', () => {
           row.remove();
+          removeDepartmentOption(name);
           if (!departmentTableBody.querySelector('tr')) {
             renderEmptyRow(departmentTableBody, 3, 'No departments available.');
           }
@@ -989,6 +1089,7 @@ if (count($sections)) {
           departmentTableBody.innerHTML = '';
         }
         departmentTableBody.appendChild(row);
+        addDepartmentOption(code, name);
       }
 
       function filterTableRows(input, tableBody, placeholderText) {
@@ -1014,15 +1115,6 @@ if (count($sections)) {
         }
       }
 
-      departmentForm.addEventListener('submit', function (event) {
-        event.preventDefault();
-        const code = deptCodeInput.value.trim();
-        const name = deptNameInput.value.trim();
-        if (!code || !name) return;
-        addDepartmentRow(code, name);
-        departmentForm.reset();
-      });
-
       if (deptSearchInput) {
         deptSearchInput.addEventListener('input', function () {
           filterTableRows(this, departmentTableBody, 'No departments matched your search.');
@@ -1035,7 +1127,9 @@ if (count($sections)) {
         });
       }
 
-      renderEmptyRow(departmentTableBody, 3, 'No departments available.');
+      if (!departmentTableBody.querySelector('tr')) {
+        renderEmptyRow(departmentTableBody, 3, 'No departments available.');
+      }
     });
   </script>
 </body>

@@ -1,6 +1,90 @@
 <?php require_once __DIR__ . '/inc/functions.php'; ?>
 <?php
+session_start();
 $teacherSaveError = '';
+$isEditMode = false;
+$editingTeacherId = 0;
+$editingTeacherData = [];
+
+// Handle delete teacher
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_teacher'])) {
+  $teacherId = intval($_POST['teacher_id'] ?? 0);
+  if ($teacherId) {
+    $conn = db_connect();
+    if ($conn) {
+      $deleteStmt = $conn->prepare("DELETE FROM teachers WHERE id = ?");
+      if ($deleteStmt) {
+        $deleteStmt->bind_param('i', $teacherId);
+        $deleteStmt->execute();
+        $deleteStmt->close();
+        audit_log('delete_teacher');
+      }
+      $conn->close();
+    }
+  }
+  header('Location: ' . $_SERVER['PHP_SELF']);
+  exit;
+}
+
+// Handle update teacher form submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_teacher'])) {
+  $teacherId = intval($_POST['teacher_id'] ?? 0);
+  $name = trim($_POST['name'] ?? '');
+  $email = trim($_POST['email'] ?? '');
+  $password = $_POST['password'] ?? '';
+  $department = trim($_POST['department'] ?? '');
+
+  if (!$teacherId || !$name) {
+    $teacherSaveError = 'Teacher ID and name are required.';
+  } else {
+    $conn = db_connect();
+    if ($conn) {
+      if ($password) {
+        $hash = password_hash($password, PASSWORD_DEFAULT);
+        $updateSql = "UPDATE teachers SET name = ?, email = ?, password_hash = ?, department = ? WHERE id = ?";
+        $stmt = $conn->prepare($updateSql);
+        if (! $stmt && strpos($conn->error, 'password_hash') !== false) {
+          $updateSql = "UPDATE teachers SET name = ?, email = ?, password = ?, department = ? WHERE id = ?";
+          $stmt = $conn->prepare($updateSql);
+        }
+        if ($stmt) {
+          if ($stmt->bind_param('ssssi', $name, $email, $hash, $department, $teacherId) && $stmt->execute()) {
+            audit_log('update_teacher');
+            $stmt->close();
+            $conn->close();
+            header('Location: ' . $_SERVER['PHP_SELF']);
+            exit;
+          } else {
+            $teacherSaveError = 'Teacher update failed: ' . $stmt->error;
+            $stmt->close();
+          }
+        } else {
+          $teacherSaveError = 'Teacher update prepare failed: ' . $conn->error;
+        }
+      } else {
+        $updateSql = "UPDATE teachers SET name = ?, email = ?, department = ? WHERE id = ?";
+        $stmt = $conn->prepare($updateSql);
+        if ($stmt) {
+          if ($stmt->bind_param('sssi', $name, $email, $department, $teacherId) && $stmt->execute()) {
+            audit_log('update_teacher');
+            $stmt->close();
+            $conn->close();
+            header('Location: ' . $_SERVER['PHP_SELF']);
+            exit;
+          } else {
+            $teacherSaveError = 'Teacher update failed: ' . $stmt->error;
+            $stmt->close();
+          }
+        } else {
+          $teacherSaveError = 'Teacher update prepare failed: ' . $conn->error;
+        }
+      }
+      $conn->close();
+    } else {
+      $teacherSaveError = 'Database connection failed';
+    }
+  }
+}
 
 // Handle add teacher form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_teacher'])) {
@@ -555,6 +639,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_teacher'])) {
       color: #ef4444;
     }
 
+    .icon-button {
+      background: transparent;
+      border: none;
+      padding: 4px 8px;
+      margin: 0;
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      transition: transform 0.2s ease;
+    }
+
+    .icon-button:hover {
+      transform: scale(1.1);
+    }
+
+    .icon-button:focus {
+      outline: none;
+    }
+
     /* --- STRUCTURAL FORM PANEL FIELDS --- */
     .form-group {
       margin: 10px 5px 20px;
@@ -877,10 +984,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_teacher'])) {
               <p style="color:#b91c1c; margin-bottom: 16px;"><?php echo htmlspecialchars($teacherSaveError); ?></p>
             <?php endif; ?>
             <div class="student-form-header">
-              <h3>Add Teacher</h3>
-              <p>Enter the teacher details below.</p>
+              <h3 id="form-title">Add Teacher</h3>
+              <p id="form-subtitle">Enter the teacher details below.</p>
             </div>
-            <form method="post">
+            <form method="post" id="teacher-form">
+              <input type="hidden" name="teacher_id" id="teacher-id-field" value="">
               <div class="form-stack">
                 <div class="form-group">
                   <label for="name">Name</label>
@@ -896,12 +1004,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_teacher'])) {
                 </div>
                 <div class="form-group">
                   <label for="password">Password</label>
-                  <input name="password" id="password" type="password" class="form-control" />
+                  <input name="password" id="password" type="password" class="form-control" id="password-help" />
+                  <small id="password-help" style="color: #666; margin-top: 4px; display: block;"></small>
                 </div>
               </div>
               <div class="form-buttons-row card-action-row">
-                <button type="submit" name="add_teacher" class="btn-submit">Save Teacher</button>
-                <button type="button" onclick="document.getElementById('teacher-modal-backdrop').style.display='none'; document.getElementById('btn-add-teacher').style.display='inline-flex';" class="btn-cancel">Cancel</button>
+                <button type="submit" id="submit-btn" name="add_teacher" class="btn-submit">Save Teacher</button>
+                <button type="button" onclick="document.getElementById('teacher-modal-backdrop').style.display='none'; document.getElementById('btn-add-teacher').style.display='inline-flex'; document.getElementById('teacher-form').reset();" class="btn-cancel">Cancel</button>
               </div>
             </form>
           </div>
@@ -922,7 +1031,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_teacher'])) {
 <?php
 $conn = db_connect();
 if ($conn) {
-    $res = $conn->query("SELECT teacher_id, name, email, department FROM teachers ORDER BY teacher_id DESC");
+    $res = $conn->query("SELECT id, teacher_id, name, email, department FROM teachers ORDER BY teacher_id DESC");
     if ($res) {
         if ($res->num_rows) {
             while ($row = $res->fetch_assoc()) {
@@ -933,8 +1042,8 @@ if ($conn) {
                 echo '<td>' . htmlspecialchars($row['department'] ?? '') . '</td>';
                 echo '<td>••••••••</td>';
                 echo '<td class="actions-cell">';
-                echo '<i class="fa-solid fa-pen-to-square"></i>';
-                echo '<i class="fa-solid fa-trash-can"></i>';
+                echo '<button type="button" class="icon-button" title="Edit teacher" onclick="editTeacher(' . intval($row['id']) . ', ' . htmlspecialchars(json_encode($row['name'])) . ', ' . htmlspecialchars(json_encode($row['email'])) . ', ' . htmlspecialchars(json_encode($row['department'])) . ')"><i class="fa-solid fa-pen-to-square"></i></button>';
+                echo '<button type="button" class="icon-button" title="Delete teacher" onclick="if(confirm(\'Delete this teacher?\')) { deleteTeacher(' . intval($row['id']) . '); }"><i class="fa-solid fa-trash-can"></i></button>';
                 echo '</td>';
                 echo '</tr>';
             }
@@ -955,5 +1064,51 @@ if ($conn) {
         </div>
     </div>
   </div>
+  <script>
+    function editTeacher(id, name, email, department) {
+      document.getElementById('teacher-id-field').value = id;
+      document.getElementById('name').value = name;
+      document.getElementById('email').value = email;
+      document.getElementById('department').value = department;
+      document.getElementById('password').value = '';
+      document.getElementById('password-help').textContent = 'Leave blank to keep existing password';
+      document.getElementById('form-title').textContent = 'Edit Teacher';
+      document.getElementById('form-subtitle').textContent = 'Update the teacher details below.';
+      document.getElementById('submit-btn').name = 'update_teacher';
+      document.getElementById('submit-btn').textContent = 'Update Teacher';
+      document.getElementById('teacher-modal-backdrop').style.display = 'flex';
+      document.getElementById('btn-add-teacher').style.display = 'none';
+    }
+
+    function resetForm() {
+      document.getElementById('teacher-id-field').value = '';
+      document.getElementById('teacher-form').reset();
+      document.getElementById('password-help').textContent = '';
+      document.getElementById('form-title').textContent = 'Add Teacher';
+      document.getElementById('form-subtitle').textContent = 'Enter the teacher details below.';
+      document.getElementById('submit-btn').name = 'add_teacher';
+      document.getElementById('submit-btn').textContent = 'Save Teacher';
+    }
+
+    function deleteTeacher(id) {
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.innerHTML = '<input type="hidden" name="delete_teacher" value="1"><input type="hidden" name="teacher_id" value="' + id + '">';
+      document.body.appendChild(form);
+      form.submit();
+    }
+
+    document.querySelectorAll('.table-search-input').forEach(input => {
+      input.addEventListener('input', function() {
+        const query = this.value.toLowerCase();
+        document.querySelectorAll('#teachers-table tbody tr').forEach(row => {
+          row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
+        });
+      });
+    });
+
+    // Reset form when closing modal
+    document.getElementById('btn-add-teacher').addEventListener('click', resetForm);
+  </script>
 </body>
 </html>
