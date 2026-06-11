@@ -1,729 +1,309 @@
-<?php require_once __DIR__ . '/inc/functions.php'; ?>
-<?php
+<?php 
+require_once __DIR__ . '/inc/functions.php'; 
 session_start();
-// allow entry if a teacher_id query param is provided (redirect from creation),
-// otherwise require an existing logged-in teacher session role.
+
+// --- Authentication & Session Management ---
 if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'teacher') {
-  if (isset($_GET['teacher_id'])) {
-    $_SESSION['user_role'] = 'teacher';
-    $_SESSION['user_id'] = intval($_GET['teacher_id']);
-  } else {
-    header('Location: login.php');
-    exit;
-  }
+    if (isset($_GET['teacher_id'])) {
+        $_SESSION['user_role'] = 'teacher';
+        $_SESSION['user_id'] = intval($_GET['teacher_id']);
+    } else {
+        header('Location: login.php');
+        exit;
+    }
 }
-// fetch teacher name for display
+
+$userId = intval($_SESSION['user_id']);
 $userName = '';
-if (!empty($_SESSION['user_id'])) {
-  $conn = db_connect();
-  if ($conn) {
-    $id = intval($_SESSION['user_id']);
-    $stmt = $conn->prepare('SELECT name FROM teachers WHERE id = ? LIMIT 1');
+$conn = db_connect();
+
+if ($conn) {
+    $stmt = $conn->prepare('SELECT first_name, middle_name, last_name FROM teachers WHERE id = ? LIMIT 1');
     if ($stmt) {
-      $stmt->bind_param('i', $id);
-      $stmt->execute();
-      $res = $stmt->get_result();
-      if ($res && $row = $res->fetch_assoc()) {
-        $userName = $row['name'] ?? '';
-      }
-      $stmt->close();
+        $stmt->bind_param('i', $userId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        if ($res && $row = $res->fetch_assoc()) {
+            $userName = make_full_name($row['first_name'], $row['middle_name'], $row['last_name']);
+        }
+        $stmt->close();
     }
     $conn->close();
-  }
+}
+
+// --- Data Preparation ---
+$schoolYear = $_GET['school_year'] ?? '2025-2026';
+$semester = $_GET['semester'] ?? '1st Semester';
+$assignments = get_teacher_assignments($userId, $schoolYear, $semester);
+$sections = [];
+
+foreach ($assignments as $a) {
+    $key = $a['section_id'];
+    if (!isset($sections[$key])) {
+        $sections[$key] = [
+            'id' => $a['section_id'],
+            'code' => $a['section_code'],
+            'name' => $a['section_name'],
+            'department' => $a['department'] ?? '',
+            'subjects' => []
+        ];
+    }
+    $sections[$key]['subjects'][] = [
+        'assignment_id' => $a['assignment_id'],
+        'subject_id' => $a['subject_id'],
+        'code' => $a['subject_code'],
+        'title' => $a['subject_title'],
+        'units' => $a['units'] ?? 3
+    ];
+}
+
+$activeSectionId = isset($_GET['section_id']) ? intval($_GET['section_id']) : 0;
+$activeSubjectId = isset($_GET['subject_id']) ? intval($_GET['subject_id']) : 0;
+$students = [];
+$gradesData = [];
+
+if ($activeSectionId && $activeSubjectId) {
+    $students = get_section_students($activeSectionId);
+    foreach ($students as $st) {
+        $g = get_grade($st['id'], $activeSubjectId, $schoolYear, $semester);
+        $gradesData[$st['id']] = $g ?: ['prelim'=>'', 'midterm'=>'', 'finals'=>'', 'average'=>'', 'gwa'=>'', 'remarks'=>''];
+    }
+}
+
+// --- Handle Form Submission ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_grades'])) {
+    $sectionId = intval($_POST['section_id'] ?? 0);
+    $subjectId = intval($_POST['subject_id'] ?? 0);
+    $sy = trim($_POST['school_year'] ?? '');
+    $sem = trim($_POST['semester'] ?? '');
+    $studentIds = $_POST['student_ids'] ?? [];
+    $prelims = $_POST['prelim'] ?? [];
+    $midterms = $_POST['midterm'] ?? [];
+    $finals = $_POST['finals'] ?? [];
+
+    foreach ($studentIds as $idx => $sid) {
+        $sid = intval($sid);
+        $p = isset($prelims[$idx]) && $prelims[$idx] !== '' ? floatval($prelims[$idx]) : null;
+        $m = isset($midterms[$idx]) && $midterms[$idx] !== '' ? floatval($midterms[$idx]) : null;
+        $f = isset($finals[$idx]) && $finals[$idx] !== '' ? floatval($finals[$idx]) : null;
+        
+        if ($p !== null) $p = max(0, min(100, $p));
+        if ($m !== null) $m = max(0, min(100, $m));
+        if ($f !== null) $f = max(0, min(100, $f));
+        
+        save_grade($sid, $subjectId, $userId, $sectionId, $sy, $sem, $p, $m, $f);
+    }
+    
+    audit_log('save_grades', $userId);
+    header('Location: ' . $_SERVER['PHP_SELF'] . '?section_id=' . $sectionId . '&subject_id=' . $subjectId . '&school_year=' . urlencode($sy) . '&semester=' . urlencode($sem));
+    exit;
 }
 ?>
 <!doctype html>
 <html lang="en">
-  <head>
+<head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CSCQC Portal</title>
+    <title>Teacher Panel - CSCQC</title>
     <link rel="icon" type="image/png" href="https://cscqcph.com/images/bg/cscqcph.png"/>
-
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-    
     <style>
-      :root {
-        --bg-color: #f1f4f2;
-        --sidebar-bg: #ffffff;
-        --text-color: #333333;
-        --text-muted: #666666;
-        --primary-green: #0e4429;
-        --primary-green-hover: #165c39;
-        --active-nav-bg: #b9deb3;
-        --border-color: #e5e7eb;
-        --card-bg: #ffffff;
-      }
-
-      * {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-        font-family: "Inter", sans-serif;
-      }
-
-      body {
-        background-color: var(--bg-color);
-        color: var(--text-color);
-        display: flex;
-        height: 100vh;
-        overflow: hidden;
-      }
-
-      /* --- SIDEBAR STYLE --- */
-      .sidebar {
-        width: 260px;
-        background-color: var(--sidebar-bg);
-        border-right: 1px solid var(--border-color);
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        padding: 20px 0;
-        flex-shrink: 0;
-      }
-
-      .brand {
-        display: flex;
-        align-items: center;
-        padding: 0 24px;
-        margin-bottom: 30px;
-      }
-
-      .brand i {
-        font-size: 2rem;
-        color: var(--primary-green);
-        margin-right: 12px;
-      }
-
-      .brand-text h2 {
-        font-size: 1rem;
-        font-weight: 700;
-        color: #111827;
-      }
-
-      .brand-text p {
-        font-size: 0.75rem;
-        color: var(--text-muted);
-      }
-
-      .nav-menu {
-        list-style: none;
-      }
-
-      .nav-item {
-        display: flex;
-        align-items: center;
-        padding: 12px 24px;
-        color: var(--primary-green);
-        background-color: var(--active-nav-bg);
-        font-size: 0.9rem;
-        font-weight: 600;
-        cursor: pointer;
-        border-left: 4px solid transparent;
-        width: 100%;
-        text-align: left;
-        border: none;
-      }
-
-      .nav-item i {
-        margin-right: 12px;
-        font-size: 1.1rem;
-        width: 20px;
-        text-align: center;
-      }
-
-      .logout-btn {
-        margin: 0 20px;
-        padding: 12px;
-        background-color: var(--primary-green);
-        color: white;
-        border: none;
-        border-radius: 6px;
-        font-weight: 500;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        text-decoration: none;
-        font-size: 0.9rem;
-        transition: background 0.2s;
-      }
-
-      .logout-btn:hover { background-color: var(--primary-green-hover); }
-
-      /* --- MAIN CONTENT STYLE --- */
-      .main-content {
-        flex-grow: 1;
-        padding: 40px;
-        overflow-y: auto;
-      }
-
-      .view-title {
-        font-size: 1.1rem;
-        color: var(--primary-green);
-        font-weight: 600;
-        margin-bottom: 4px;
-      }
-
-      .view-subtitle {
-        font-size: 0.9rem;
-        color: var(--text-muted);
-        font-weight: 400;
-        margin-bottom: 24px;
-      }
-
-      /* --- CONTROLLER STATE LOGIC --- */
-      .state-controller { display: none; }
-
-      #view-section-list { display: block; }
-      #view-students-container { display: none; }
-
-      #trigger-section-active:checked ~ .main-content #view-section-list { display: none; }
-      #trigger-section-active:checked ~ .main-content #view-students-container { display: block; }
-
-      /* --- GLOBAL SYSTEM CONTROLS --- */
-      .global-term-container {
-        display: flex;
-        gap: 15px;
-        background-color: #0e4429;
-        padding: 14px 20px;
-        border-radius: 8px;
-        margin-bottom: 24px;
-        align-items: center;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-      }
-
-      .global-term-container label {
-        color: #ffffff;
-        font-size: 0.85rem;
-        font-weight: 600;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-
-      .global-select {
-        padding: 6px 12px;
-        border-radius: 4px;
-        border: 1px solid #165c39;
-        font-size: 0.85rem;
-        background-color: #ffffff;
-        color: #333333;
-        font-weight: 500;
-        cursor: pointer;
-        outline: none;
-      }
-
-      /* --- SEARCH & SELECT FILTER UTILITIES --- */
-      .filter-toolbar {
-        display: flex;
-        gap: 15px;
-        margin-bottom: 20px;
-        background-color: var(--card-bg);
-        padding: 16px;
-        border-radius: 8px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-      }
-
-      .search-box-wrapper {
-        position: relative;
-        flex-grow: 1;
-      }
-
-      .search-box-wrapper i {
-        position: absolute;
-        left: 14px;
-        top: 50%;
-        transform: translateY(-50%);
-        color: #9ca3af;
-      }
-
-      .search-input {
-        width: 100%;
-        padding: 10px 10px 10px 40px;
-        border: 1px solid #d1d5db;
-        border-radius: 6px;
-        font-size: 0.875rem;
-      }
-
-      .search-input:focus, .filter-select:focus {
-        outline: none;
-        border-color: var(--primary-green);
-        box-shadow: 0 0 0 2px rgba(14, 68, 41, 0.1);
-      }
-
-      .filter-select {
-        padding: 10px 32px 10px 14px;
-        border: 1px solid #d1d5db;
-        border-radius: 6px;
-        font-size: 0.875rem;
-        background-color: white;
-        min-width: 160px;
-        cursor: pointer;
-      }
-
-      /* --- ACCORDION LIST / SECTIONS STYLE --- */
-      .accordion-container {
-        background-color: var(--card-bg);
-        border-radius: 8px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-        overflow: hidden;
-      }
-
-      .accordion-header {
-        display: flex;
-        justify-content: flex-end;
-        padding: 14px 24px;
-        border-bottom: 1px solid var(--border-color);
-        color: var(--primary-green);
-        font-size: 1.2rem;
-      }
-
-      .section-row-btn {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        width: 100%;
-        padding: 16px 24px;
-        background: none;
-        border: none;
-        border-bottom: 1px solid #f3f4f6;
-        color: #1f2937;
-        font-size: 0.875rem;
-        font-weight: 500;
-        cursor: pointer;
-        transition: background-color 0.15s;
-      }
-
-      .section-row-btn:last-child { border-bottom: none; }
-      .section-row-btn:hover { background-color: #f9fafb; }
-      
-      .row-subject-tag {
-        font-size: 0.8rem;
-        color: var(--text-muted);
-        font-weight: 400;
-        background-color: #f3f4f6;
-        padding: 4px 10px;
-        border-radius: 4px;
-      }
-
-      /* --- STUDENT LIST TABLE STYLE --- */
-      .panel-block {
-        background-color: var(--card-bg);
-        border-radius: 8px;
-        padding: 24px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-      }
-
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        text-align: left;
-        font-size: 0.85rem;
-        margin-bottom: 24px;
-      }
-
-      th {
-        color: #8492a6;
-        font-weight: 600;
-        text-transform: uppercase;
-        font-size: 0.75rem;
-        padding-bottom: 16px;
-        border-bottom: 1px solid var(--border-color);
-        padding-right: 10px;
-      }
-
-      td {
-        padding: 12px 10px 12px 0;
-        color: #1f2937;
-        border-bottom: 1px solid #f3f4f6;
-        vertical-align: middle;
-      }
-
-      .grade-input {
-        width: 75px;
-        padding: 6px 8px;
-        border: 1px solid #d1d5db;
-        border-radius: 4px;
-        font-size: 0.85rem;
-        text-align: center;
-      }
-
-      .grade-input:focus {
-        outline: none;
-        border-color: var(--primary-green);
-        box-shadow: 0 0 0 2px rgba(14, 68, 41, 0.1);
-      }
-
-      .calculated-final {
-        font-weight: 600;
-        font-size: 0.9rem;
-      }
-
-      .gwa-badge {
-        font-weight: 700;
-        font-size: 0.85rem;
-        background-color: #edf2f7;
-        padding: 4px 8px;
-        border-radius: 4px;
-        color: #2d3748;
-      }
-
-      .status-badge {
-        font-size: 0.72rem;
-        font-weight: 800;
-        text-transform: uppercase;
-        padding: 4px 10px;
-        border-radius: 50px;
-        display: inline-block;
-        letter-spacing: 0.5px;
-      }
-
-      .badge-empty { background-color: #edf2f7; color: #718096; }
-      .badge-pass { background-color: #def7ec; color: #03543f; }
-      .badge-fail { background-color: #fde8e8; color: #9b1c1c; }
-
-      .btn-back {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        background-color: white;
-        color: #4b5563;
-        border: 1px solid #d1d5db;
-        padding: 8px 16px;
-        border-radius: 6px;
-        font-size: 0.85rem;
-        font-weight: 500;
-        cursor: pointer;
-        transition: background-color 0.15s;
-      }
-
-      .btn-back:hover { background-color: #f9fafb; }
-
-      .btn-save-all {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        background-color: var(--primary-green);
-        color: white;
-        border: none;
-        padding: 8px 18px;
-        border-radius: 6px;
-        font-size: 0.85rem;
-        font-weight: 600;
-        cursor: pointer;
-        margin-right: 10px;
-        transition: background-color 0.15s;
-      }
-      .btn-save-all:hover { background-color: var(--primary-green-hover); }
+        :root { --bg-color:#f1f4f2; --sidebar-bg:#ffffff; --text-color:#333333; --text-muted:#666666; --primary-green:#0e4429; --primary-green-hover:#165c39; --light-green-bg:#d8ebd4; --active-nav-bg:#b9deb3; --border-color:#e5e7eb; --card-bg:#ffffff; }
+        * { box-sizing:border-box; margin:0; padding:0; font-family:"Inter",sans-serif; }
+        body { background-color:var(--bg-color); color:var(--text-color); display:flex; height:100vh; overflow:hidden; }
+        
+        /* Sidebar Styles */
+        .sidebar { width:260px; background-color:var(--sidebar-bg); border-right:1px solid var(--border-color); display:flex; flex-direction:column; justify-content:space-between; padding:20px 0; flex-shrink:0; }
+        .brand { display:flex; align-items:center; padding:0 24px; margin-bottom:30px; }
+        .brand i { font-size:2rem; color:var(--primary-green); margin-right:12px; }
+        .brand-text h2 { font-size:1rem; font-weight:700; color:#111827; }
+        .brand-text p { font-size:0.75rem; color:var(--text-muted); }
+        .nav-item { display:flex; align-items:center; padding:12px 24px; color:var(--primary-green); background-color:var(--active-nav-bg); font-size:0.9rem; font-weight:600; cursor:pointer; border-left:4px solid transparent; width:100%; text-align:left; border:none; }
+        .nav-item i { margin-right:12px; font-size:1.1rem; width:20px; text-align:center; }
+        .logout-btn { margin:0 20px; padding:12px; background-color:var(--primary-green); color:white; border:none; border-radius:6px; font-weight:500; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; text-decoration:none; font-size:0.9rem; transition:background 0.2s; }
+        .logout-btn:hover { background-color:var(--primary-green-hover); }
+        
+        /* Main Content Styles */
+        .main-content { flex-grow:1; padding:40px; overflow-y:auto; }
+        .view-title { font-size:1.1rem; color:var(--primary-green); font-weight:600; margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px; }
+        .view-subtitle { font-size:0.9rem; color:var(--text-muted); font-weight:400; margin-bottom:24px; }
+        .global-term-container { display:flex; align-items:center; gap:24px; background-color:#0c3e21; padding:16px 24px; border-radius:12px; margin-bottom:24px; box-shadow:0 4px 6px -1px rgba(0,0,0,0.1); flex-wrap:wrap; }
+        .global-term-container label { color:#ffffff; font-size:0.9rem; font-weight:700; display:flex; align-items:center; gap:8px; white-space:nowrap; }
+        .global-select { padding:8px 14px; border-radius:6px; border:1px solid transparent; font-size:0.875rem; background-color:#ffffff; color:#1f2937; font-weight:500; cursor:pointer; outline:none; min-width:140px; transition:border-color 0.2s, box-shadow 0.2s; }
+        .filter-group { display:flex; align-items:center; gap:12px; }
+        
+        /* Table Styles */
+        .panel-block { background-color:var(--card-bg); border-radius:8px; padding:24px; box-shadow:0 1px 3px rgba(0,0,0,0.05); margin-bottom:24px; }
+        .table-responsive { width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; border:1px solid var(--border-color); border-radius:6px; background-color:#ffffff; }
+        table { width:100%; border-collapse:collapse; text-align:left; font-size:0.85rem; min-width:650px; }
+        th { color:#4b5563; background-color:#f9fafb; font-weight:600; text-transform:uppercase; font-size:0.75rem; padding:12px 16px; border-bottom:1px solid var(--border-color); }
+        td { padding:14px 16px; color:#1f2937; border-bottom:1px solid #f3f4f6; vertical-align:middle; }
+        .grade-input { width:75px; padding:6px 8px; border:1px solid #d1d5db; border-radius:4px; font-size:0.85rem; text-align:center; }
+        .calculated-final { font-weight:600; font-size:0.9rem; }
+        .gwa-badge { font-weight:700; font-size:0.85rem; background-color:#edf2f7; padding:4px 8px; border-radius:4px; color:#2d3748; }
+        .status-badge { font-size:0.72rem; font-weight:800; text-transform:uppercase; padding:4px 10px; border-radius:50px; display:inline-block; letter-spacing:0.5px; }
+        .badge-pass { background-color:#def7ec; color:#03543f; }
+        .badge-fail { background-color:#fde8e8; color:#9b1c1c; }
+        .badge-empty { background-color:#edf2f7; color:#718096; }
+        
+        /* Buttons */
+        .btn-back { display:inline-flex; align-items:center; gap:6px; background-color:white; color:#4b5563; border:1px solid #d1d5db; padding:8px 16px; border-radius:6px; font-size:0.85rem; font-weight:500; cursor:pointer; }
+        .btn-save-all { display:inline-flex; align-items:center; gap:6px; background-color:var(--primary-green); color:white; border:none; padding:8px 18px; border-radius:6px; font-size:0.85rem; font-weight:600; cursor:pointer; margin-right:10px; }
+        
+        @media (max-width:1024px) { body { grid-template-columns:1fr; padding-top:60px; } .mobile-header { display:flex; } .sidebar { position:fixed; top:60px; left:0; bottom:0; transform:translateX(-100%); width:260px; height:calc(100vh - 60px); box-shadow:4px 0 10px rgba(0,0,0,0.1); transition:transform .3s ease; } #sidebar-toggle:checked ~ .sidebar { transform:translateX(0); } .main-content { padding:20px; } }
     </style>
-  </head>
-  <body>
-
-    <input type="radio" name="view-state" id="trigger-base" class="state-controller" checked />
-    <input type="radio" name="view-state" id="trigger-section-active" class="state-controller" />
-
+</head>
+<body>
+    <input type="checkbox" id="sidebar-toggle" />
     <aside class="sidebar">
-      <div>
-        <div class="brand">
-          <i class="fa-solid fa-graduation-cap" aria-hidden="true"></i>
-          <div class="brand-text">
-            <h2>Teacher Panel</h2>
-            <p>CSCQC</p>
-          </div>
+        <div>
+            <div class="brand"><i class="fa-solid fa-graduation-cap"></i><div class="brand-text"><h2>Teacher Panel</h2><p>CSCQC</p></div></div>
+            <nav class="nav-menu">
+                <a href="teacher_module.php" class="nav-item"><i class="fa-solid fa-list-ul"></i> My Classes</a>
+            </nav>
         </div>
-
-        <nav class="nav-menu" aria-label="Main Navigation">
-          <label for="trigger-base" class="nav-item" id="sidebar-nav-list" style="cursor:pointer;">
-            <i class="fa-solid fa-list-ul" aria-hidden="true"></i> Student List
-          </label>
-        </nav>
-      </div>
-
-      <div style="padding: 0 20px 20px 20px; text-align: center;">
-        <div style="margin-bottom:8px; color:#374151; font-weight:600;"><?php echo htmlspecialchars($userName ?: ''); ?></div>
-        <a href="login.php?logout=1" class="logout-btn">
-          <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Logout
-        </a>
-      </div>
+        <div style="padding:0 20px 20px 20px; text-align:center;">
+            <a href="login.php?logout=1" class="logout-btn"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
+        </div>
     </aside>
 
     <main class="main-content">
-      
-      <div class="global-term-container">
-        <label for="global-sy-select">
-          <i class="fa-solid fa-calendar-days"></i> Academic Year:
-        </label>
-        <select id="global-sy-select" class="global-select">
-          <option value="2025-2026">2025–2026</option>
-          <option value="2024-2025">2024–2025</option>
-        </select>
-
-        <label for="global-sem-select">
-          <i class="fa-solid fa-clock"></i> Semester:
-        </label>
-        <select id="global-sem-select" class="global-select">
-          <option value="1st Semester">1st Semester</option>
-          <option value="2nd Semester">2nd Semester</option>
-          <option value="Summer">Summer</option>
-        </select>
-      </div>
-      
-      <section id="view-section-list" aria-labelledby="heading-student-list">
-        <h1 id="heading-student-list" class="view-title" style="margin-bottom: 24px;">Assigned Class Sections</h1>
-
-        <div class="filter-toolbar">
-          <div class="search-box-wrapper">
-            <i class="fa-solid fa-magnifying-glass"></i>
-            <input type="text" id="search-sections-input" class="search-input" placeholder="Search by section or subject name...">
-          </div>
-          <select id="filter-year-select" class="filter-select">
-            <option value="all">All Years</option>
-            <option value="1st Year">1st Year</option>
-            <option value="2nd Year">2nd Year</option>
-          </select>
+        <h1 class="view-title">Welcome, <?php echo htmlspecialchars($userName); ?></h1>
+        <p class="view-subtitle">Teacher Panel - CSCQC</p>
+        <div class="global-term-container">
+            <div class="filter-group">
+                <label for="global-sy-select"><i class="fa-solid fa-calendar-days"></i> Academic Year:</label>
+                <select id="global-sy-select" class="global-select" onchange="window.location.href='?school_year='+this.value+'&semester=<?php echo urlencode($semester); ?>'">
+                    <?php foreach (['2025-2026','2024-2025','2026-2027'] as $y): ?>
+                        <option value="<?php echo $y; ?>" <?php echo $schoolYear===$y?'selected':''; ?>><?php echo $y; ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="global-sem-select"><i class="fa-solid fa-clock"></i> Semester:</label>
+                <select id="global-sem-select" class="global-select" onchange="window.location.href='?semester='+this.value+'&school_year=<?php echo urlencode($schoolYear); ?>'">
+                    <option value="1st Semester" <?php echo $semester==='1st Semester'?'selected':''; ?>>1st Semester</option>
+                    <option value="2nd Semester" <?php echo $semester==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
+                    <option value="Summer" <?php echo $semester==='Summer'?'selected':''; ?>>Summer</option>
+                </select>
+            </div>
         </div>
 
-        <div class="accordion-container" id="sections-wrapper">
-          <div class="accordion-header">
-            <i class="fa-solid fa-angle-up" aria-hidden="true"></i>
-          </div>
+        <?php if (!$activeSectionId): ?>
+            <h1 class="view-title">Select Section</h1>
+            <div class="panel-block">
+                <div class="table-responsive">
+                    <table id="sections-table" style="min-width:650px;">
+                        <thead>
+                            <tr><th>Section Code</th><th>Section Name</th><th>Department</th><th>Subjects</th><th>Action</th></tr>
+                        </thead>
+                        <tbody>
+                        <?php if (empty($sections)): ?>
+                            <tr><td colspan="5" style="text-align:center;padding:24px;">No sections found.</td></tr>
+                        <?php else: foreach ($sections as $sec): ?>
+                            <tr>
+                                <td><strong><?php echo htmlspecialchars($sec['code']); ?></strong></td>
+                                <td><?php echo htmlspecialchars($sec['name']); ?></td>
+                                <td><?php echo htmlspecialchars($sec['department'] ?? 'N/A'); ?></td>
+                                <td><?php echo count($sec['subjects']); ?></td>
+                                <td><a href="?section_id=<?php echo $sec['id']; ?>&school_year=<?php echo urlencode($schoolYear); ?>&semester=<?php echo urlencode($semester); ?>" style="padding:6px 14px; background-color:var(--primary-green); color:white; border-radius:6px; text-decoration:none;">Select</a></td>
+                            </tr>
+                        <?php endforeach; endif; ?>
+                    </tbody>
+                </table>
+                </div>
+            </div>
+        <?php elseif ($activeSectionId && !$activeSubjectId): ?>
+            <a href="?" class="btn-back"><i class="fa-solid fa-arrow-left"></i> Back to Sections</a>
+            <h1 class="view-title">Select Subject</h1>
+            <div class="panel-block">
+                <div class="table-responsive">
+                    <table id="subjects-table" style="min-width:650px;">
+                        <thead>
+                            <tr><th>Subject Code</th><th>Title</th><th>Units</th><th>Action</th></tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($sections[$activeSectionId]['subjects'] as $subj): ?>
+                                <tr>
+                                    <td><strong><?php echo htmlspecialchars($subj['code']); ?></strong></td>
+                                    <td><?php echo htmlspecialchars($subj['title']); ?></td>
+                                    <td><?php echo htmlspecialchars($subj['units']); ?></td>
+                                    <td><a href="?section_id=<?php echo $activeSectionId; ?>&subject_id=<?php echo $subj['subject_id']; ?>&school_year=<?php echo urlencode($schoolYear); ?>&semester=<?php echo urlencode($semester); ?>" style="padding:6px 14px; background-color:var(--primary-green); color:white; border-radius:6px; text-decoration:none;">Select</a></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
 
-          <div class="empty-section-message" style="padding: 24px; text-align: center; color: #666;">
-            No sections assigned yet.
-          </div>
-        </div>
-      </section>
+        <?php else: ?>
+            <a href="?school_year=<?php echo urlencode($schoolYear); ?>&semester=<?php echo urlencode($semester); ?>" class="btn-back"><i class="fa-solid fa-arrow-left"></i> Back to Sections</a>
+            <h1 class="view-title">Class Grades</h1>
+            <p class="view-subtitle"><?php echo htmlspecialchars("$schoolYear | $semester"); ?></p>
 
-      <section id="view-students-container" aria-labelledby="active-section-title">
-        <h1 id="active-section-title" class="view-title">Dynamic Class Title</h1>
-        <p id="active-subject-subtitle" class="view-subtitle">Dynamic Subject Subtitle</p>
-
-        <div class="panel-block">
-          <form id="grades-submission-form" onsubmit="event.preventDefault()">
-            <table id="dynamic-students-table">
-              <thead>
-                <tr>
-                  <th scope="col" style="width: 12%;">Student ID</th>
-                  <th scope="col" style="width: 25%;">Student Name</th>
-                  <th scope="col" style="text-align: center; width: 12%;">Prelim</th>
-                  <th scope="col" style="text-align: center; width: 12%;">Midterm </th>
-                  <th scope="col" style="text-align: center; width: 12%;">Finals </th>
-                  <th scope="col" style="text-align: center; width: 15%;">Average</th>
-                  <th scope="col" style="text-align: center; width: 12%;">Student GWA</th>
-                  <th scope="col" style="text-align: center; width: 12%;">Remarks</th>
-                </tr>
-              </thead>
-              <tbody id="student-table-body">
-              </tbody>
-            </table>
-
-            <button type="submit" class="btn-save-all">
-              <i class="fa-solid fa-floppy-disk"></i> Save Marks
-            </button>
-
-            <label for="trigger-base" class="btn-back">
-              <i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Back
-            </label>
-          </form>
-        </div>
-      </section>
+            <div class="panel-block">
+                <form id="grades-form" method="post">
+                    <input type="hidden" name="section_id" value="<?php echo $activeSectionId; ?>">
+                    <input type="hidden" name="subject_id" value="<?php echo $activeSubjectId; ?>">
+                    <input type="hidden" name="school_year" value="<?php echo htmlspecialchars($schoolYear); ?>">
+                    <input type="hidden" name="semester" value="<?php echo htmlspecialchars($semester); ?>">
+                    <input type="hidden" name="save_grades" value="1">
+                    <div class="table-responsive">
+                        <table style="min-width:650px;">
+                            <thead>
+                                <tr><th>Student ID</th><th>Name</th><th>Prelim</th><th>Midterm</th><th>Finals</th><th>Average</th><th>GWA</th><th>Remarks</th></tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($students as $st): 
+                                    $g = $gradesData[$st['id']] ?? []; 
+                                ?>
+                                <tr>
+                                    <td><strong><?php echo htmlspecialchars($st['student_id']); ?></strong></td>
+                                    <td><?php echo htmlspecialchars($st['last_name'] . ', ' . $st['first_name']); ?></td>
+                                    <td><input type="number" name="prelim[]" class="grade-input" value="<?php echo htmlspecialchars($g['prelim'] ?? ''); ?>"></td>
+                                    <td><input type="number" name="midterm[]" class="grade-input" value="<?php echo htmlspecialchars($g['midterm'] ?? ''); ?>"></td>
+                                    <td><input type="number" name="finals[]" class="grade-input" value="<?php echo htmlspecialchars($g['finals'] ?? ''); ?>"></td>
+                                    <td><span class="calculated-final"><?php echo htmlspecialchars($g['average'] ?? '--'); ?></span></td>
+                                    <td><span class="gwa-badge"><?php echo htmlspecialchars($g['gwa'] ?? '--'); ?></span></td>
+                                    <td><span class="status-badge <?php echo ($g['remarks'] ?? '')==='Passed'?'badge-pass':'badge-fail'; ?>"><?php echo htmlspecialchars($g['remarks'] ?? 'Pending'); ?></span></td>
+                                    <input type="hidden" name="student_ids[]" value="<?php echo $st['id']; ?>">
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    <button type="submit" class="btn-save-all"><i class="fa-solid fa-floppy-disk"></i> Save Marks</button>
+                </form>
+            </div>
+        <?php endif; ?>
     </main>
 
     <script>
-      document.addEventListener("DOMContentLoaded", function () {
-        const sectionButtons = document.querySelectorAll(".section-row-btn");
-        const studentTableBody = document.getElementById("student-table-body");
-        const activeSectionTitle = document.getElementById("active-section-title");
-        const activeSubjectSubtitle = document.getElementById("active-subject-subtitle");
-        
-        const searchInput = document.getElementById("search-sections-input");
-        const filterYearSelect = document.getElementById("filter-year-select");
-        
-        // Global system selectors
-        const globalSySelect = document.getElementById("global-sy-select");
-        const globalSemSelect = document.getElementById("global-sem-select");
-
-        const viewToggleTrigger = document.getElementById("trigger-section-active");
-        const baseViewTrigger = document.getElementById("trigger-base");
-        const sidebarNavList = document.getElementById("sidebar-nav-list");
-
-        sidebarNavList.addEventListener("click", () => {
-          baseViewTrigger.checked = true;
-        });
-
-        // 1. REAL-TIME MULTI-CRITERIA FILTER ENGINE
-        function filterSections() {
-          const searchValue = searchInput.value.toLowerCase().trim();
-          const selectedYear = filterYearSelect.value;
-          
-          // Capture current global system period parameters
-          const currentGlobalSy = globalSySelect.value;
-          const currentGlobalSem = globalSemSelect.value;
-
-          sectionButtons.forEach(button => {
-            const sectionName = button.getAttribute("data-section-name").toLowerCase();
-            const subjectName = button.getAttribute("data-subject").toLowerCase();
-            const yearLevel = button.getAttribute("data-year");
-            
-            // Extract current target context attributes
-            const itemSy = button.getAttribute("data-academic-year");
-            const itemSem = button.getAttribute("data-semester");
-
-            const matchesSearch = sectionName.includes(searchValue) || subjectName.includes(searchValue);
-            const matchesYear = (selectedYear === "all") || (yearLevel === selectedYear);
-            
-            // Check global match criteria rules
-            const matchesGlobalSy = (itemSy === currentGlobalSy);
-            const matchesGlobalSem = (itemSem === currentGlobalSem);
-
-            if (matchesSearch && matchesYear && matchesGlobalSy && matchesGlobalSem) {
-              button.style.display = "flex";
-            } else {
-              button.style.display = "none";
-            }
-          });
-        }
-
-        // Attach event listener structural bindings
-        searchInput.addEventListener("input", filterSections);
-        filterYearSelect.addEventListener("change", filterSections);
-        globalSySelect.addEventListener("change", filterSections);
-        globalSemSelect.addEventListener("change", filterSections);
-
-        // Execute filtration routine immediately upon initial startup
-        filterSections();
-
-        // Translates running numeric scores into university grade values
-        function getGwaEquivalent(percentage) {
-          if (percentage >= 97) return "1.00";
-          if (percentage >= 94) return "1.25";
-          if (percentage >= 91) return "1.50";
-          if (percentage >= 88) return "1.75";
-          if (percentage >= 85) return "2.00";
-          if (percentage >= 82) return "2.25";
-          if (percentage >= 79) return "2.50";
-          if (percentage >= 76) return "2.75";
-          if (percentage >= 75) return "3.00";
-          return "5.00";
-        }
-
-        // Re-formats raw names to "Surname, First Mid" array layouts
-        function formatToLastNameFirst(fullName) {
-          const parts = fullName.trim().split(/\s+/);
-          if (parts.length <= 1) return fullName; 
-          
-          const lastName = parts.pop(); 
-          const restOfName = parts.join(" ");
-          
-          return `${lastName}, ${restOfName}`;
-        }
-
-        sectionButtons.forEach(button => {
-          button.addEventListener("click", function () {
-            const sectionName = this.getAttribute("data-section-name");
-            const subjectName = this.getAttribute("data-subject");
-            const rawStudentsData = this.getAttribute("data-students");
-
-            if (!rawStudentsData) return;
-
-            let studentsArray = JSON.parse(rawStudentsData);
-
-            studentsArray = studentsArray.map(student => {
-              return {
-                id: student.id,
-                name: formatToLastNameFirst(student.name)
-              };
-            });
-
-            studentsArray.sort((a, b) => a.name.localeCompare(b.name));
-            
-            activeSectionTitle.textContent = sectionName;
-            activeSubjectSubtitle.textContent = "Subject: " + subjectName;
-            studentTableBody.innerHTML = "";
-
-            studentsArray.forEach(student => {
-              const row = document.createElement("tr");
-              row.className = "student-row";
-
-              row.innerHTML = `
-                <td><strong>${student.id}</strong></td>
-                <td>${student.name}</td>
-                <td style="text-align: center;">
-                  <input type="number" min="0" max="100" name="prelim_${student.id}" class="grade-input prelim-field" placeholder="">
-                </td>
-                <td style="text-align: center;">
-                  <input type="number" min="0" max="100" name="midterm_${student.id}" class="grade-input midterm-field" placeholder="">
-                </td>
-                <td style="text-align: center;">
-                  <input type="number" min="0" max="100" name="final_${student.id}" class="grade-input final-field" placeholder="">
-                </td>
-                <td style="text-align: center;">
-                  <span class="calculated-final" id="avg-${student.id}">--</span>
-                </td>
-                <td style="text-align: center;">
-                  <span class="gwa-badge" id="gwa-${student.id}">--</span>
-                </td>
-                <td style="text-align: center;">
-                  <span class="status-badge badge-empty" id="badge-${student.id}">Pending</span>
-                </td>
-              `;
-              studentTableBody.appendChild(row);
-            });
-
-            attachGradeCalculationListeners();
-            viewToggleTrigger.checked = true;
-          });
-        });
-
-        function attachGradeCalculationListeners() {
-          const studentRows = studentTableBody.querySelectorAll(".student-row");
-
-          studentRows.forEach(row => {
-            const inputs = row.querySelectorAll(".grade-input");
-            const prelimInput = row.querySelector(".prelim-field");
-            const midtermInput = row.querySelector(".midterm-field");
-            const finalInput = row.querySelector(".final-field");
-            const averageDisplay = row.querySelector(".calculated-final");
-            const gwaBadge = row.querySelector(".gwa-badge");
-            const statusBadge = row.querySelector(".status-badge");
-
-            inputs.forEach(input => {
-              input.addEventListener("input", () => {
-                const p = parseFloat(prelimInput.value);
-                const m = parseFloat(midtermInput.value);
-                const f = parseFloat(finalInput.value);
-
+        // Grade Calculation Logic
+        document.querySelectorAll('.grade-input').forEach(input => {
+            input.addEventListener('input', function() {
+                const row = this.closest('tr');
+                const inputs = row.querySelectorAll('.grade-input');
+                const p = parseFloat(inputs[0].value), m = parseFloat(inputs[1].value), f = parseFloat(inputs[2].value);
+                const avgSpan = row.querySelector('.calculated-final'), gwaSpan = row.querySelector('.gwa-badge'), statusSpan = row.querySelector('.status-badge');
+                
                 if (!isNaN(p) && !isNaN(m) && !isNaN(f)) {
-                  const finalAverage = (p + m + f) / 3;
-                  averageDisplay.textContent = finalAverage.toFixed(2) + "%";
-
-                  const computedGwa = getGwaEquivalent(finalAverage);
-                  gwaBadge.textContent = computedGwa;
-
-                  if (finalAverage >= 75) {
-                    averageDisplay.style.color = "#16a34a";
-                    statusBadge.textContent = "Passed";
-                    statusBadge.className = "status-badge badge-pass";
-                  } else {
-                    averageDisplay.style.color = "#dc2626";
-                    statusBadge.textContent = "Failed";
-                    statusBadge.className = "status-badge badge-fail";
-                  }
-                } else {
-                  averageDisplay.textContent = "--";
-                  averageDisplay.style.color = "inherit";
-                  gwaBadge.textContent = "--";
-                  statusBadge.textContent = "Pending";
-                  statusBadge.className = "status-badge badge-empty";
+                    const avg = (p + m + f) / 3;
+                    avgSpan.textContent = avg.toFixed(2) + '%';
+                    gwaSpan.textContent = getGwa(avg);
+                    statusSpan.textContent = avg >= 75 ? 'Passed' : 'Failed';
+                    statusSpan.className = 'status-badge ' + (avg >= 75 ? 'badge-pass' : 'badge-fail');
                 }
-              });
             });
-          });
+        });
+
+        function getGwa(pct) {
+            if (pct >= 97) return '1.00'; if (pct >= 94) return '1.25'; if (pct >= 91) return '1.50';
+            if (pct >= 88) return '1.75'; if (pct >= 85) return '2.00'; if (pct >= 82) return '2.25';
+            if (pct >= 79) return '2.50'; if (pct >= 76) return '2.75'; if (pct >= 75) return '3.00';
+            return '5.00';
         }
-      });
     </script>
-  </body>
+</body>
 </html>

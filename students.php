@@ -1,26 +1,31 @@
-    <?php require_once __DIR__ . '/inc/functions.php'; ?>
-    <?php
-    session_start();
-    $studentSaveError = '';
-    $submittedName = '';
-    $submittedEmail = '';
+<?php require_once __DIR__ . '/inc/functions.php'; ?>
+<?php
+ob_start();
+session_start();
+$studentSaveError = '';
+    $submittedFirstName = '';
+    $submittedMiddleName = '';
+    $submittedLastName = '';
     $submittedSectionId = 0;
+    $submittedDepartment = '';
     $sections = [];
+    $departments = [];
+
+    $conn = db_connect();
+    if ($conn) {
+        $res = $conn->query("SELECT id, name FROM departments ORDER BY name ASC");
+        if ($res) {
+            while ($row = $res->fetch_assoc()) $departments[] = $row;
+            $res->free();
+        }
+        $conn->close();
+    }
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_student'])) {
       $studentIdToDelete = intval($_POST['student_id'] ?? 0);
       if ($studentIdToDelete) {
-        $conn = db_connect();
-        if ($conn) {
-          $deleteStmt = $conn->prepare("DELETE FROM students WHERE id = ?");
-          if ($deleteStmt) {
-            $deleteStmt->bind_param('i', $studentIdToDelete);
-            $deleteStmt->execute();
-            $deleteStmt->close();
-            audit_log('delete_student');
-          }
-          $conn->close();
-        }
+        delete_student($studentIdToDelete);
+        audit_log('delete_student');
       }
       header('Location: ' . $_SERVER['PHP_SELF']);
       exit;
@@ -29,149 +34,47 @@
     // Handle update student form submission
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
       $studentId = intval($_POST['student_id'] ?? 0);
-      $submittedName = trim($_POST['name'] ?? '');
-      $submittedEmail = trim($_POST['email'] ?? '');
+      $firstName = trim($_POST['first_name'] ?? '');
+      $middleName = trim($_POST['middle_name'] ?? '');
+      $lastName = trim($_POST['last_name'] ?? '');
       $submittedSectionId = intval($_POST['section_id'] ?? 0);
-      $password = $_POST['password'] ?? '';
+      $submittedDepartment = trim($_POST['department'] ?? '');
 
-      if (!$studentId || !$submittedName) {
-        $studentSaveError = 'Student ID and name are required.';
-      }
-
-      if (!$studentSaveError) {
-        if (!$submittedSectionId) {
-          $submittedSectionId = null;
-        }
-
-        $conn = db_connect();
-        if ($conn) {
-          if ($password) {
-            $hash = password_hash($password, PASSWORD_DEFAULT);
-            $updateSql = "UPDATE students SET name = ?, email = ?, password_hash = ?, section_id = ? WHERE id = ?";
-            $stmt = $conn->prepare($updateSql);
-            if (!$stmt && strpos($conn->error, 'password_hash') !== false) {
-              $updateSql = "UPDATE students SET name = ?, email = ?, password = ?, section_id = ? WHERE id = ?";
-              $stmt = $conn->prepare($updateSql);
-            }
-            if ($stmt) {
-              if ($stmt->bind_param('sssii', $submittedName, $submittedEmail, $hash, $submittedSectionId, $studentId) && $stmt->execute()) {
-                audit_log('update_student');
-                $stmt->close();
-                $conn->close();
-                header('Location: ' . $_SERVER['PHP_SELF']);
-                exit;
-              } else {
-                $studentSaveError = 'Student update failed: ' . $stmt->error;
-                $stmt->close();
-              }
-            } else {
-              $studentSaveError = 'Student update prepare failed: ' . $conn->error;
-            }
-          } else {
-            $updateSql = "UPDATE students SET name = ?, email = ?, section_id = ? WHERE id = ?";
-            $stmt = $conn->prepare($updateSql);
-            if ($stmt) {
-              if ($stmt->bind_param('ssii', $submittedName, $submittedEmail, $submittedSectionId, $studentId) && $stmt->execute()) {
-                audit_log('update_student');
-                $stmt->close();
-                $conn->close();
-                header('Location: ' . $_SERVER['PHP_SELF']);
-                exit;
-              } else {
-                $studentSaveError = 'Student update failed: ' . $stmt->error;
-                $stmt->close();
-              }
-            } else {
-              $studentSaveError = 'Student update prepare failed: ' . $conn->error;
-            }
-          }
-          $conn->close();
+      if (!$studentId || !$firstName || !$lastName) {
+        $studentSaveError = 'First name and last name are required.';
+      } else {
+        $ok = update_student($studentId, $firstName, $middleName, $lastName, $submittedSectionId ?: null, $submittedDepartment ?: null, null);
+        if ($ok) {
+          audit_log('update_student');
+          header('Location: ' . $_SERVER['PHP_SELF']);
+          exit;
         } else {
-          $studentSaveError = 'Database connection failed.';
+          $studentSaveError = 'Student update failed.';
         }
       }
     }
 
     // Handle add student form submission
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_student'])) {
-      $submittedName = trim($_POST['name'] ?? '');
-      $submittedEmail = trim($_POST['email'] ?? '');
+      $firstName = trim($_POST['first_name'] ?? '');
+      $middleName = trim($_POST['middle_name'] ?? '');
+      $lastName = trim($_POST['last_name'] ?? '');
       $submittedSectionId = intval($_POST['section_id'] ?? 0);
-      $password = $_POST['password'] ?? '';
+      $submittedDepartment = trim($_POST['department'] ?? '');
+      $submittedFirstName = $firstName;
+      $submittedMiddleName = $middleName;
+      $submittedLastName = $lastName;
 
-      if (! $submittedName) {
-        $studentSaveError = 'Student name is required.';
-      }
-
-      if (! $studentSaveError) {
-        $parts = preg_split('/\s+/', $submittedName);
-        $lastname = strtolower(preg_replace('/[^a-z]/', '', end($parts) ?: $submittedName));
-        if (! $submittedEmail) {
-          $submittedEmail = $lastname . '@cscqc.edu.ph';
-        }
-        if (! $password) {
-          $password = $lastname;
-        }
-
-        $conn = db_connect();
-        if ($conn) {
-          $check = $conn->query("SHOW COLUMNS FROM students LIKE 'section_id'");
-          if ($check && $check->num_rows === 0) {
-            $conn->query("ALTER TABLE students ADD COLUMN section_id INT UNSIGNED DEFAULT NULL");
-          }
-          if ($check) {
-            $check->free();
-          }
-
-          if (! $submittedSectionId) {
-            $submittedSectionId = null;
-          }
-
-          $hash = password_hash($password, PASSWORD_DEFAULT);
-          $insertSql = "INSERT INTO students (name, email, password_hash, section_id) VALUES (?, ?, ?, ?)";
-          $stmt = $conn->prepare($insertSql);
-          if (! $stmt && strpos($conn->error, 'Unknown column') !== false && strpos($conn->error, 'password_hash') !== false) {
-            $insertSql = "INSERT INTO students (name, email, password, section_id) VALUES (?, ?, ?, ?)";
-            $stmt = $conn->prepare($insertSql);
-          }
-
-          if ($stmt) {
-            if ($stmt->bind_param('sssi', $submittedName, $submittedEmail, $hash, $submittedSectionId) && $stmt->execute()) {
-              $newId = $conn->insert_id;
-              if ($newId) {
-                $code = sprintf('S-%03d', $newId);
-                $update = $conn->prepare("UPDATE students SET student_id = ? WHERE id = ?");
-                if ($update) {
-                  if (! $update->bind_param('si', $code, $newId) || ! $update->execute()) {
-                    $studentSaveError = 'Student ID update failed: ' . $update->error;
-                  }
-                  $update->close();
-                } else {
-                  $studentSaveError = 'Student ID update prepare failed: ' . $conn->error;
-                }
-              }
-              if (! $studentSaveError) {
-                audit_log('create_student');
-                // log in the newly created student
-                $_SESSION['user_role'] = 'student';
-                $_SESSION['user_id'] = $newId;
-              }
-            } else {
-              $studentSaveError = 'Student insert failed: ' . $stmt->error;
-            }
-            $stmt->close();
-          } else {
-            $studentSaveError = 'Student insert prepare failed: ' . $conn->error;
-          }
-          $conn->close();
+      if (! $firstName || ! $lastName) {
+        $studentSaveError = 'First name and last name are required.';
+      } else {
+        $result = create_student($firstName, $middleName, $lastName, $submittedSectionId ?: null, $submittedDepartment ?: null);
+        if ($result['success']) {
+            audit_log('create_student');
+            $studentSaveError = 'Student registered successfully! ID: ' . $result['student_id'] . ' | Password: ' . $result['password'];
         } else {
-          $studentSaveError = 'Database connection failed.';
+          $studentSaveError = $result['error'];
         }
-      }
-
-      if (! $studentSaveError) {
-        header('Location: student_module.php?student_id=' . urlencode((string)$newId));
-        exit;
       }
     }
 
@@ -327,9 +230,11 @@
         }
 
         .nav-menu label:hover,
-        .nav-menu a:hover {
-          background-color: #f9fafb;
+        .nav-menu a:hover,
+        .nav-menu a.active {
+          background-color: var(--active-nav-bg);
           color: var(--primary-green);
+          font-weight: 600;
         }
 
         .logout-btn {
@@ -982,11 +887,11 @@
             <a href="admin.php" class="nav-link"><i class="fa-solid fa-table-cells-large"></i> Dashboard</a>
             <a href="teachers.php" class="nav-link"><i class="fa-solid fa-users"></i> Teachers</a>
             <a href="section.php" class="nav-link"><i class="fa-solid fa-book-open"></i> Section & Dept</a>
-            <a href="students.php" class="nav-link"><i class="fa-solid fa-user-graduate"></i> Students</a>
+            <a href="students.php" class="nav-link active"><i class="fa-solid fa-user-graduate"></i> Students</a>
             <a href="assign.php" class="nav-link"><i class="fa-solid fa-gear"></i> Assign Module</a>
           </nav>
         </div>
-        <a href="#" class="logout-btn">
+        <a href="login.php?logout=1" class="logout-btn">
           <i class="fa-solid fa-right-from-bracket"></i> Logout
         </a>
       </aside>
@@ -1058,91 +963,105 @@
                 <?php if ($studentSaveError): ?>
                   <p style="color:#b91c1c; margin-bottom: 16px;"><?php echo htmlspecialchars($studentSaveError); ?></p>
                 <?php endif; ?>
-                <div class="student-form-header">
-                  <h3 id="form-title">Add Student</h3>
-                  <p id="form-subtitle">Enter the student details below.</p>
-                </div>
-                <form method="post" id="student-form">
-                  <input type="hidden" name="student_id" id="student-id-field" value="">
-                  <div class="form-group">
-                    <label for="name">Name</label>
-                    <input name="name" id="name" class="form-control" required placeholder="Full name" value="<?php echo htmlspecialchars($submittedName); ?>" />
-                  </div>
-                  <div class="form-group">
-                    <label for="email">Email</label>
-                    <input name="email" id="email" type="email" class="form-control" placeholder="Optional email" value="<?php echo htmlspecialchars($submittedEmail); ?>" />
-                  </div>
-                  <div class="form-group">
-                    <label for="section_id">Section</label>
-                    <select name="section_id" id="section_id" class="form-control">
-                      <option value="" selected>Select section...</option>
-<?php foreach ($sections as $sectionOption): ?>
-                      <option value="<?php echo htmlspecialchars($sectionOption['id']); ?>"<?php echo $submittedSectionId == $sectionOption['id'] ? ' selected' : ''; ?>>
-                        <?php echo htmlspecialchars($sectionOption['section_code'] . ' - ' . $sectionOption['name']); ?>
-                      </option>
-<?php endforeach; ?>
-                    </select>
-                  </div>
-                  <div class="form-group">
-                    <label for="password">Password</label>
-                    <input name="password" id="password" type="password" class="form-control" placeholder="Optional password" />
-                    <small id="password-help" style="color: #666; margin-top: 4px; display: block;"></small>
-                  </div>
-                  <div class="form-buttons-row card-action-row">
-                    <button type="submit" id="submit-btn" name="add_student" class="btn-submit">Register</button>
-                  </div>
-                </form>
+                 <div class="student-form-header">
+                   <h3 id="form-title">Add Student</h3>
+                   <p id="form-subtitle">Enter the student details below.</p>
+                 </div>
+                 <form method="post" id="student-form">
+                   <input type="hidden" name="student_id" id="student-id-field" value="">
+                   <div class="grid-3col">
+                     <div class="form-group">
+                       <label for="first_name">First Name</label>
+                       <input type="text" id="first_name" name="first_name" class="form-control" required placeholder="First name" value="<?php echo htmlspecialchars($submittedFirstName ?? ''); ?>" />
+                     </div>
+                     <div class="form-group">
+                       <label for="middle_name">Middle Name</label>
+                       <input type="text" id="middle_name" name="middle_name" class="form-control" placeholder="Middle name" value="<?php echo htmlspecialchars($submittedMiddleName ?? ''); ?>" />
+                     </div>
+                     <div class="form-group">
+                       <label for="last_name">Last Name</label>
+                       <input type="text" id="last_name" name="last_name" class="form-control" required placeholder="Last name" value="<?php echo htmlspecialchars($submittedLastName ?? ''); ?>" />
+                     </div>
+                   </div>
+                   <div class="form-group">
+                     <label for="department">Department</label>
+                     <select id="department" name="department" class="form-control">
+                       <option value="">Select department...</option>
+                       <?php foreach ($departments as $dept): ?>
+                         <option value="<?php echo htmlspecialchars($dept['name']); ?>" <?php echo ($submittedDepartment ?? '') === $dept['name'] ? 'selected' : ''; ?>>
+                           <?php echo htmlspecialchars($dept['name']); ?>
+                         </option>
+                       <?php endforeach; ?>
+                     </select>
+                   </div>
+                   <div class="form-group">
+                     <label for="section_id">Section</label>
+                     <select name="section_id" id="section_id" class="form-control">
+                       <option value="" selected>Select section...</option>
+    <?php foreach ($sections as $sectionOption): ?>
+                       <option value="<?php echo htmlspecialchars($sectionOption['id']); ?>"<?php echo $submittedSectionId == $sectionOption['id'] ? ' selected' : ''; ?>>
+                         <?php echo htmlspecialchars($sectionOption['section_code'] . ' - ' . $sectionOption['name']); ?>
+                       </option>
+    <?php endforeach; ?>
+                     </select>
+                   </div>
+                   <div class="form-buttons-row card-action-row">
+                     <button type="submit" id="submit-btn" name="add_student" class="btn-submit">Register</button>
+                   </div>
+                 </form>
               </div>
             </div>
             <div class="table-responsive">
               <table id="students-table">
                 <thead>
-                  <tr>
-                    <th>User ID</th>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Section</th>
-                    <th>Password</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-<?php
-$conn = db_connect();
-if ($conn) {
-    $res = $conn->query(
-        "SELECT s.id, s.student_id, s.name, s.email, s.section_id, sec.name AS section_name, sec.section_code " .
-        "FROM students s " .
-        "LEFT JOIN sections sec ON s.section_id = sec.id " .
-        "ORDER BY s.id DESC"
-    );
-    if ($res) {
-        if ($res->num_rows) {
-            while ($row = $res->fetch_assoc()) {
-                echo '<tr>';
-                echo '<td>' . htmlspecialchars($row['student_id'] ?? '') . '</td>';
-                echo '<td>' . htmlspecialchars($row['name']) . '</td>';
-                echo '<td>' . htmlspecialchars($row['email']) . '</td>';
-                $sectionDisplay = trim(($row['section_code'] ? $row['section_code'] . ' - ' : '') . ($row['section_name'] ?? ''));
-                echo '<td>' . htmlspecialchars($sectionDisplay) . '</td>';
-                echo '<td>••••••</td>';
-                echo '<td class="actions-cell">';
-                echo '<button type="button" class="icon-button" title="Edit student" onclick="editStudent(' . intval($row['id']) . ', ' . htmlspecialchars(json_encode($row['name'])) . ', ' . htmlspecialchars(json_encode($row['email'])) . ', ' . htmlspecialchars(json_encode($row['section_id'] ?? 0)) . ')"><i class="fa-solid fa-pen-to-square"></i></button>';
-                echo '<button type="button" class="icon-button" title="Delete student" onclick="if(confirm(\'Delete this student?\')) { deleteStudent(' . intval($row['id']) . '); }"><i class="fa-solid fa-trash-can"></i></button>';
-                echo '</td>';
-                echo '</tr>';
+              <tr>
+                <th>User ID</th>
+                <th>Name</th>
+                <th>Department</th>
+                <th>Section</th>
+                <th>Password</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+            <?php
+            $conn = db_connect();
+            if ($conn) {
+                $res = $conn->query(
+                    "SELECT s.id, s.student_id, s.first_name, s.middle_name, s.last_name, s.section_id, s.department, sec.name AS section_name, sec.section_code " .
+                    "FROM students s " .
+                    "LEFT JOIN sections sec ON s.section_id = sec.id " .
+                    "ORDER BY s.last_name ASC, s.first_name ASC"
+                );
+                if ($res) {
+                    if ($res->num_rows) {
+                        while ($row = $res->fetch_assoc()) {
+                            $fullName = htmlspecialchars($row['first_name'] . ' ' . ($row['middle_name'] ? $row['middle_name'] . ' ' : '') . $row['last_name']);
+                            $passwordHint = htmlspecialchars(strtoupper(substr($row['first_name'], 0, 1)) . $row['last_name']);
+                            echo '<tr>';
+                            echo '<td>' . htmlspecialchars($row['student_id'] ?? ('S-' . sprintf('%03d', $row['id']))) . '</td>';
+                            echo '<td>' . $fullName . '</td>';
+                            echo '<td>' . htmlspecialchars($row['department'] ?? '') . '</td>';
+                            $sectionDisplay = trim(($row['section_code'] ? $row['section_code'] . ' - ' : '') . ($row['section_name'] ?? ''));
+                            echo '<td>' . htmlspecialchars($sectionDisplay) . '</td>';
+                            echo '<td><div class="password-cell"><span class="password-dots" id="pwd-dots-' . intval($row['id']) . '">••••••••</span><span class="password-text" id="pwd-text-' . intval($row['id']) . '" style="display:none;">' . $passwordHint . '</span><button type="button" class="icon-button" onclick="togglePassword(' . intval($row['id']) . ')" title="Show/Hide password"><i class="fa-solid fa-eye" id="pwd-eye-' . intval($row['id']) . '"></i></button></div></td>';
+                            echo '<td class="actions-cell">';
+                            echo '<a href="?edit_student=' . intval($row['id']) . '" class="icon-button" title="Edit student" style="text-decoration:none;"><i class="fa-solid fa-pen-to-square" style="color:#10b981;"></i></a>';
+                            echo '<form method="post" style="display:inline;" onsubmit="return confirm(\'Delete this student?\');"><input type="hidden" name="delete_student" value="1"><input type="hidden" name="student_id" value="' . intval($row['id']) . '"><button type="submit" class="icon-button" title="Delete student"><i class="fa-solid fa-trash-can"></i></button></form>';
+                            echo '</td>';
+                            echo '</tr>';
+                        }
+                    } else {
+                        echo '<tr><td colspan="6" style="text-align:center;color:#6b7280;padding:18px;">No students found.</td></tr>';
+                    }
+                } else {
+                    echo '<tr><td colspan="6" style="text-align:center;color:#6b7280;padding:18px;">Query error.</td></tr>';
+                }
+                $conn->close();
+            } else {
+                echo '<tr><td colspan="6" style="text-align:center;color:#6b7280;padding:18px;">Database unavailable.</td></tr>';
             }
-        } else {
-            echo '<tr><td colspan="6" style="text-align:center; padding:18px;">No students found.</td></tr>';
-        }
-    } else {
-        echo '<tr><td colspan="6" style="text-align:center; padding:18px;">Query error: ' . htmlspecialchars($conn->error) . '</td></tr>';
-    }
-    $conn->close();
-} else {
-    echo '<tr><td colspan="6" style="text-align:center; padding:18px;">Database unavailable.</td></tr>';
-}
-?>
+            ?>
                 </tbody>
               </table>
             </div>
@@ -1150,13 +1069,13 @@ if ($conn) {
         </div>
       </div>
       <script>
-        function editStudent(id, name, email, sectionId) {
+        function editStudent(id, firstName, middleName, lastName, department, sectionId) {
           document.getElementById('student-id-field').value = id;
-          document.getElementById('name').value = name;
-          document.getElementById('email').value = email;
+          document.getElementById('first_name').value = firstName;
+          document.getElementById('middle_name').value = middleName;
+          document.getElementById('last_name').value = lastName;
+          document.getElementById('department').value = department || '';
           document.getElementById('section_id').value = sectionId || '';
-          document.getElementById('password').value = '';
-          document.getElementById('password-help').textContent = 'Leave blank to keep existing password';
           document.getElementById('form-title').textContent = 'Edit Student';
           document.getElementById('form-subtitle').textContent = 'Update the student details below.';
           document.getElementById('submit-btn').name = 'update_student';
@@ -1168,11 +1087,25 @@ if ($conn) {
         function resetForm() {
           document.getElementById('student-id-field').value = '';
           document.getElementById('student-form').reset();
-          document.getElementById('password-help').textContent = '';
           document.getElementById('form-title').textContent = 'Add Student';
           document.getElementById('form-subtitle').textContent = 'Enter the student details below.';
           document.getElementById('submit-btn').name = 'add_student';
           document.getElementById('submit-btn').textContent = 'Register';
+        }
+
+        function togglePassword(id) {
+          const dots = document.getElementById('pwd-dots-' + id);
+          const text = document.getElementById('pwd-text-' + id);
+          const eye = document.getElementById('pwd-eye-' + id);
+          if (dots.style.display === 'none') {
+            dots.style.display = '';
+            text.style.display = 'none';
+            eye.className = 'fa-solid fa-eye';
+          } else {
+            dots.style.display = 'none';
+            text.style.display = '';
+            eye.className = 'fa-solid fa-eye-slash';
+          }
         }
 
         function deleteStudent(id) {

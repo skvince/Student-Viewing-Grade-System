@@ -1,5 +1,10 @@
 <?php
 require_once __DIR__ . '/inc/functions.php';
+session_start();
+if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+    header('Location: login.php');
+    exit;
+}
 
 $totalTeachers = 0;
 $totalStudents = 0;
@@ -158,7 +163,6 @@ if ($conn) {
       display: none;
     }
 
-    .nav-menu label,
     .nav-menu a {
       display: flex;
       align-items: center;
@@ -173,7 +177,6 @@ if ($conn) {
       text-decoration: none;
     }
 
-    .nav-menu label i,
     .nav-menu a i {
       margin-right: 12px;
       font-size: 1.1rem;
@@ -181,10 +184,11 @@ if ($conn) {
       text-align: center;
     }
 
-    .nav-menu label:hover,
-    .nav-menu a:hover {
-      background-color: #f9fafb;
+    .nav-menu a:hover,
+    .nav-menu a.active {
+      background-color: var(--active-nav-bg);
       color: var(--primary-green);
+      font-weight: 600;
     }
 
     .logout-btn {
@@ -701,43 +705,22 @@ if ($conn) {
 </head>
 <body>
   <input type="checkbox" id="sidebar-toggle" />
-<header class="mobile-header">
-    <div class="brand" style="padding: 0; margin: 0">
-      <i class="fa-solid fa-graduation-cap" style="font-size: 1.5rem"></i>
-      <div class="brand-text">
-        <h2 style="font-size: 0.9rem">Admin Panel</h2>
-      </div>
-    </div>
-    <label for="sidebar-toggle" class="menu-toggle-btn">
-      <i class="fa-solid fa-bars"></i>
-    </label>
+  <header class="mobile-header">
+    <div class="brand" style="padding:0;margin:0;"><i class="fa-solid fa-graduation-cap" style="font-size:1.5rem;color:var(--primary-green);margin-right:10px;"></i><div class="brand-text"><h2 style="font-size:.9rem;">Admin Panel</h2></div></div>
+    <label for="sidebar-toggle" class="menu-toggle-btn"><i class="fa-solid fa-bars"></i></label>
   </header>
-  <input type="radio" name="nav-tabs" id="tab-dashboard" checked class="tab-switch" />
-  <input type="radio" name="nav-tabs" id="tab-teachers" class="tab-switch" />
-  <input type="radio" name="nav-tabs" id="tab-sec-dept" class="tab-switch" />
-  <input type="radio" name="nav-tabs" id="tab-students" class="tab-switch" />
-  <input type="radio" name="nav-tabs" id="tab-assign" class="tab-switch" />
-
   <aside class="sidebar">
     <div>
-      <div class="brand">
-        <i class="fa-solid fa-graduation-cap"></i>
-        <div class="brand-text">
-          <h2>Admin Panel</h2>
-          <p>CSCQC</p>
-        </div>
-      </div>
+      <div class="brand"><i class="fa-solid fa-graduation-cap"></i><div class="brand-text"><h2>Admin Panel</h2><p>CSCQC</p></div></div>
       <nav class="nav-menu" aria-label="Main Navigation">
-        <a href="admin.php" class="nav-link"><i class="fa-solid fa-table-cells-large"></i> Dashboard</a>
-        <a href="teachers.php" class="nav-link"><i class="fa-solid fa-users"></i> Teachers</a>
-        <a href="section.php" class="nav-link"><i class="fa-solid fa-book-open"></i> Section & Dept</a>
-        <a href="students.php" class="nav-link"><i class="fa-solid fa-user-graduate"></i> Students</a>
-        <a href="assign.php" class="nav-link"><i class="fa-solid fa-gear"></i> Assign Module</a>
+        <a href="admin.php" class="active"><i class="fa-solid fa-table-cells-large"></i> Dashboard</a>
+        <a href="teachers.php"><i class="fa-solid fa-users"></i> Teachers</a>
+        <a href="section.php"><i class="fa-solid fa-book-open"></i> Section & Dept</a>
+        <a href="students.php"><i class="fa-solid fa-user-graduate"></i> Students</a>
+        <a href="assign.php"><i class="fa-solid fa-gear"></i> Assign Module</a>
       </nav>
     </div>
-    <a href="#" class="logout-btn">
-      <i class="fa-solid fa-right-from-bracket"></i> Logout
-    </a>
+    <a href="login.php?logout=1" class="logout-btn"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
   </aside>
   <div class="main-content">
     <div class="global-term-container">

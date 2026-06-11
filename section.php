@@ -1,5 +1,10 @@
 <?php
 require_once __DIR__ . '/inc/functions.php';
+session_start();
+if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+    header('Location: login.php');
+    exit;
+}
 
 $sections = [];
 $departments = [];
@@ -42,6 +47,59 @@ if ($conn) {
         }
     }
 
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_department'])) {
+        $deptId = intval($_POST['dept_id'] ?? 0);
+        $deptCode = trim($_POST['dept_code'] ?? '');
+        $deptName = trim($_POST['dept_name'] ?? '');
+        if ($deptId && $deptCode && $deptName) {
+            $stmt = $conn->prepare("UPDATE departments SET department_code = ?, name = ? WHERE id = ?");
+            if ($stmt) {
+                $stmt->bind_param('ssi', $deptCode, $deptName, $deptId);
+                if ($stmt->execute()) {
+                    $stmt->close();
+                    audit_log('update_department');
+                    header('Location: ' . $_SERVER['PHP_SELF']);
+                    exit;
+                } else {
+                    $saveError = 'Department update failed: ' . $stmt->error;
+                    $stmt->close();
+                }
+            } else {
+                $saveError = 'Department update prepare failed: ' . $conn->error;
+            }
+        } else {
+            $saveError = 'Department code and name are required.';
+        }
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_department'])) {
+        $deptId = intval($_POST['dept_id'] ?? 0);
+        if ($deptId) {
+            $chk = $conn->prepare("SELECT id FROM sections WHERE department = (SELECT name FROM departments WHERE id = ?) LIMIT 1");
+            $inUse = false;
+            if ($chk) {
+                $chk->bind_param('i', $deptId);
+                $chk->execute();
+                $chk->store_result();
+                $inUse = ($chk->num_rows > 0);
+                $chk->close();
+            }
+            if (!$inUse) {
+                $stmt = $conn->prepare("DELETE FROM departments WHERE id = ?");
+                if ($stmt) {
+                    $stmt->bind_param('i', $deptId);
+                    $stmt->execute();
+                    $stmt->close();
+                    audit_log('delete_department');
+                }
+            } else {
+                $saveError = 'Cannot delete: department is in use by sections.';
+            }
+        }
+        header('Location: ' . $_SERVER['PHP_SELF']);
+        exit;
+    }
+
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_section'])) {
         $name = trim($_POST['sec_name'] ?? '');
         $department = trim($_POST['sec_department'] ?? '');
@@ -75,6 +133,67 @@ if ($conn) {
         }
     }
 
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_section'])) {
+        $sectionId = intval($_POST['section_id'] ?? 0);
+        $name = trim($_POST['sec_name'] ?? '');
+        $department = trim($_POST['sec_department'] ?? '');
+        $schoolYear = trim($_POST['sec_year'] ?? '');
+        $semester = trim($_POST['sec_semester'] ?? '');
+        $section_code = trim($_POST['sec_code'] ?? '');
+
+        if ($sectionId && $name) {
+            if (! $section_code) {
+                $slug = preg_replace('/[^A-Za-z0-9]+/', '-', strtolower($name));
+                $section_code = 'SEC-' . strtoupper(substr($slug, 0, 5)) . '-' . substr(time(), -4);
+            }
+            $stmt = $conn->prepare("UPDATE sections SET section_code = ?, name = ?, department = ?, school_year = ?, semester = ? WHERE id = ?");
+            if ($stmt) {
+                $stmt->bind_param('sssssi', $section_code, $name, $department, $schoolYear, $semester, $sectionId);
+                if ($stmt->execute()) {
+                    $stmt->close();
+                    audit_log('update_section');
+                    header('Location: ' . $_SERVER['PHP_SELF']);
+                    exit;
+                } else {
+                    $saveError = 'Section update failed: ' . $stmt->error;
+                    $stmt->close();
+                }
+            } else {
+                $saveError = 'Section update prepare failed: ' . $conn->error;
+            }
+        } else {
+            $saveError = 'Section name is required.';
+        }
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_section'])) {
+        $sectionId = intval($_POST['section_id'] ?? 0);
+        if ($sectionId) {
+            $chk = $conn->prepare("SELECT id FROM students WHERE section_id = ? LIMIT 1");
+            $inUse = false;
+            if ($chk) {
+                $chk->bind_param('i', $sectionId);
+                $chk->execute();
+                $chk->store_result();
+                $inUse = ($chk->num_rows > 0);
+                $chk->close();
+            }
+            if (!$inUse) {
+                $stmt = $conn->prepare("DELETE FROM sections WHERE id = ?");
+                if ($stmt) {
+                    $stmt->bind_param('i', $sectionId);
+                    $stmt->execute();
+                    $stmt->close();
+                    audit_log('delete_section');
+                }
+            } else {
+                $saveError = 'Cannot delete: section has assigned students.';
+            }
+        }
+        header('Location: ' . $_SERVER['PHP_SELF']);
+        exit;
+    }
+
 
     foreach (['teacher_id' => "INT UNSIGNED DEFAULT NULL", 'school_year' => "VARCHAR(20) DEFAULT NULL", 'semester' => "VARCHAR(20) DEFAULT NULL"] as $column => $definition) {
         $check = $conn->query("SHOW COLUMNS FROM sections LIKE '{$column}'");
@@ -94,8 +213,24 @@ if ($conn) {
         $res->free();
     }
 
+    $editingDepartment = null;
+    if (isset($_GET['edit_department'])) {
+        $editingDeptId = intval($_GET['edit_department']);
+        $q = $conn->query("SELECT id, department_code, name FROM departments WHERE id = " . intval($editingDeptId) . " LIMIT 1");
+        if ($q && ($r = $q->fetch_assoc())) $editingDepartment = $r;
+        if ($q) $q->free();
+    }
+
+    $editingSection = null;
+    if (isset($_GET['edit_section'])) {
+        $editingSecId = intval($_GET['edit_section']);
+        $q = $conn->query("SELECT id, section_code, name, department, school_year, semester FROM sections WHERE id = " . intval($editingSecId) . " LIMIT 1");
+        if ($q && ($r = $q->fetch_assoc())) $editingSection = $r;
+        if ($q) $q->free();
+    }
+
     $res = $conn->query(
-        "SELECT section_code, name, department, school_year, semester " .
+        "SELECT id, section_code, name, department, school_year, semester " .
         "FROM sections " .
         "ORDER BY created_at DESC"
     );
@@ -248,9 +383,11 @@ if ($conn) {
     }
 
     .nav-menu label:hover,
-    .nav-menu a:hover {
-      background-color: #f9fafb;
+    .nav-menu a:hover,
+    .nav-menu a.active {
+      background-color: var(--active-nav-bg);
       color: var(--primary-green);
+      font-weight: 600;
     }
 
     .logout-btn {
@@ -338,25 +475,6 @@ if ($conn) {
     .global-select:focus {
       border-color: #22c55e;
       box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
-    }
-
-    /* --- CSS TAB SWITCHING LOGIC --- */
-    #tab-dashboard:checked~.main-content #content-dashboard,
-    #tab-teachers:checked~.main-content #content-teachers,
-    #tab-sec-dept:checked~.main-content #content-sec-dept,
-    #tab-students:checked~.main-content #content-students,
-    #tab-assign:checked~.main-content #content-assign {
-      display: block;
-    }
-
-    #tab-dashboard:checked~.sidebar label[for="tab-dashboard"],
-    #tab-teachers:checked~.sidebar label[for="tab-teachers"],
-    #tab-sec-dept:checked~.sidebar label[for="tab-sec-dept"],
-    #tab-students:checked~.sidebar label[for="tab-students"],
-    #tab-assign:checked~.sidebar label[for="tab-assign"] {
-      background-color: var(--active-nav-bg);
-      color: var(--primary-green);
-      font-weight: 600;
     }
 
     /* --- UI COMPONENTS & TABLES --- */
@@ -767,43 +885,22 @@ if ($conn) {
 </head>
 <body>
   <input type="checkbox" id="sidebar-toggle" />
-<header class="mobile-header">
-    <div class="brand" style="padding: 0; margin: 0">
-      <i class="fa-solid fa-graduation-cap" style="font-size: 1.5rem"></i>
-      <div class="brand-text">
-        <h2 style="font-size: 0.9rem">Admin Panel</h2>
-      </div>
-    </div>
-    <label for="sidebar-toggle" class="menu-toggle-btn">
-      <i class="fa-solid fa-bars"></i>
-    </label>
+  <header class="mobile-header">
+    <div class="brand" style="padding:0;margin:0;"><i class="fa-solid fa-graduation-cap" style="font-size:1.5rem;color:var(--primary-green);margin-right:10px;"></i><div class="brand-text"><h2 style="font-size:.9rem;">Admin Panel</h2></div></div>
+    <label for="sidebar-toggle" class="menu-toggle-btn"><i class="fa-solid fa-bars"></i></label>
   </header>
-  <input type="radio" name="nav-tabs" id="tab-dashboard" class="tab-switch" />
-  <input type="radio" name="nav-tabs" id="tab-teachers" class="tab-switch" />
-  <input type="radio" name="nav-tabs" id="tab-sec-dept" checked class="tab-switch" />
-  <input type="radio" name="nav-tabs" id="tab-students" class="tab-switch" />
-  <input type="radio" name="nav-tabs" id="tab-assign" class="tab-switch" />
-
   <aside class="sidebar">
     <div>
-      <div class="brand">
-        <i class="fa-solid fa-graduation-cap"></i>
-        <div class="brand-text">
-          <h2>Admin Panel</h2>
-          <p>CSCQC</p>
-        </div>
-      </div>
+      <div class="brand"><i class="fa-solid fa-graduation-cap"></i><div class="brand-text"><h2>Admin Panel</h2><p>CSCQC</p></div></div>
       <nav class="nav-menu" aria-label="Main Navigation">
-        <a href="admin.php" class="nav-link"><i class="fa-solid fa-table-cells-large"></i> Dashboard</a>
-        <a href="teachers.php" class="nav-link"><i class="fa-solid fa-users"></i> Teachers</a>
-        <a href="section.php" class="nav-link"><i class="fa-solid fa-book-open"></i> Section & Dept</a>
-        <a href="students.php" class="nav-link"><i class="fa-solid fa-user-graduate"></i> Students</a>
-        <a href="assign.php" class="nav-link"><i class="fa-solid fa-gear"></i> Assign Module</a>
+        <a href="admin.php"><i class="fa-solid fa-table-cells-large"></i> Dashboard</a>
+        <a href="teachers.php"><i class="fa-solid fa-users"></i> Teachers</a>
+        <a href="section.php" class="active"><i class="fa-solid fa-book-open"></i> Section & Dept</a>
+        <a href="students.php"><i class="fa-solid fa-user-graduate"></i> Students</a>
+        <a href="assign.php"><i class="fa-solid fa-gear"></i> Assign Module</a>
       </nav>
     </div>
-    <a href="#" class="logout-btn">
-      <i class="fa-solid fa-right-from-bracket"></i> Logout
-    </a>
+    <a href="login.php?logout=1" class="logout-btn"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
   </aside>
   <div class="main-content">
     <div class="global-term-container">
@@ -845,21 +942,28 @@ if ($conn) {
           <h2 class="block-title">Create / Manage Departments</h2>
         </div>
         <form id="department-form" method="post">
-          <input type="hidden" name="add_department" value="1" />
+          <input type="hidden" name="<?php echo $editingDepartment ? 'update_department' : 'add_department'; ?>" value="1" />
+          <?php if ($editingDepartment): ?>
+            <input type="hidden" name="dept_id" value="<?= intval($editingDepartment['id']) ?>" />
+          <?php endif; ?>
           <div class="grid-2col">
             <div class="form-group">
               <label for="dept-code-input">Department Code</label>
-              <input type="text" id="dept-code-input" name="dept_code" class="form-control" placeholder="Enter department code" required />
+              <input type="text" id="dept-code-input" name="dept_code" class="form-control" placeholder="Enter department code" required value="<?php echo htmlspecialchars($editingDepartment['department_code'] ?? ''); ?>" />
             </div>
             <div class="form-group">
               <label for="dept-name-input">Department Name Description</label>
-              <input type="text" id="dept-name-input" name="dept_name" class="form-control" placeholder="Enter department name" required />
+              <input type="text" id="dept-name-input" name="dept_name" class="form-control" placeholder="Enter department name" required value="<?php echo htmlspecialchars($editingDepartment['name'] ?? ''); ?>" />
             </div>
           </div>
           <div class="form-buttons-row">
             <button type="submit" class="btn-submit">
-              <i class="fa-solid fa-plus"></i> Save Department
+              <i class="fa-solid <?php echo $editingDepartment ? 'fa-floppy-disk' : 'fa-plus'; ?>"></i>
+              <?php echo $editingDepartment ? 'Update Department' : 'Save Department'; ?>
             </button>
+            <?php if ($editingDepartment): ?>
+              <a href="section.php" class="btn-cancel">Cancel</a>
+            <?php endif; ?>
           </div>
         </form>
 
@@ -901,7 +1005,10 @@ if (count($departments)) {
         echo '<tr>';
         echo '<td>' . htmlspecialchars($department['department_code']) . '</td>';
         echo '<td>' . htmlspecialchars($department['name']) . '</td>';
-        echo '<td class="actions-cell"><i class="fa-solid fa-trash-can"></i></td>';
+        echo '<td class="actions-cell">';
+        echo '<a href="?edit_department=' . intval($department['id']) . '#department-block" class="icon-button" title="Edit department" style="text-decoration:none;"><i class="fa-solid fa-pen-to-square" style="color:#10b981;"></i></a>';
+        echo '<form method="post" style="display:inline;" onsubmit="return confirm(\'Delete this department?\');"><input type="hidden" name="delete_department" value="1"><input type="hidden" name="dept_id" value="' . intval($department['id']) . '"><button type="submit" class="icon-button" title="Delete department" style="background:transparent;border:none;padding:2px;"><i class="fa-solid fa-trash-can" style="color:#ef4444;"></i></button></form>';
+        echo '</td>';
         echo '</tr>';
     }
 } else {
@@ -919,49 +1026,52 @@ if (count($departments)) {
           <h2 class="block-title">Create / Manage Sections</h2>
         </div>
         <form id="section-form" method="post">
-          <input type="hidden" name="add_section" value="1" />
-          <input type="hidden" name="sec_code" id="sec-code-input" value="" />
+          <input type="hidden" name="<?php echo $editingSection ? 'update_section' : 'add_section'; ?>" value="1" />
+          <?php if ($editingSection): ?>
+            <input type="hidden" name="section_id" value="<?= intval($editingSection['id']) ?>" />
+          <?php endif; ?>
+          <input type="hidden" name="sec_code" id="sec-code-input" value="<?php echo htmlspecialchars($editingSection['section_code'] ?? ''); ?>" />
           <div class="grid-3col">
             <div class="form-group">
               <label for="sec-name-input">Section Name</label>
-              <input type="text" id="sec-name-input" name="sec_name" class="form-control" placeholder="Enter section name" required />
+              <input type="text" id="sec-name-input" name="sec_name" class="form-control" placeholder="Enter section name" required value="<?php echo htmlspecialchars($editingSection['name'] ?? ''); ?>" />
             </div>
             <div class="form-group">
               <label for="sec-year-select">School Year</label>
               <select id="sec-year-select" name="sec_year" class="form-control" required>
-                <option value="" disabled selected hidden>
-                  Select academic year...
-                </option>
-                <option value="2025-2026">S.Y. 2025-2026</option>
-                <option value="2026-2027">S.Y. 2026-2027</option>
+                <option value="" disabled <?php echo !$editingSection ? 'selected' : ''; ?>>Select academic year...</option>
+                <option value="2025-2026" <?= ($editingSection['school_year'] ?? '') === '2025-2026' ? 'selected' : '' ?>>S.Y. 2025-2026</option>
+                <option value="2026-2027" <?= ($editingSection['school_year'] ?? '') === '2026-2027' ? 'selected' : '' ?>>S.Y. 2026-2027</option>
               </select>
             </div>
             <div class="form-group">
               <label for="sec-sem-select">Semester</label>
               <select id="sec-sem-select" name="sec_semester" class="form-control" required>
-                <option value="" disabled selected hidden>
-                  Select semester term...
-                </option>
-                <option value="1st Semester">1st Semester</option>
-                <option value="2nd Semester">2nd Semester</option>
+                <option value="" disabled <?php echo !$editingSection ? 'selected' : ''; ?>>Select semester term...</option>
+                <option value="1st Semester" <?= ($editingSection['semester'] ?? '') === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
+                <option value="2nd Semester" <?= ($editingSection['semester'] ?? '') === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
               </select>
             </div>
             <div class="form-group">
               <label for="sec-dept-select">Department</label>
               <select id="sec-dept-select" name="sec_department" class="form-control" required>
-                <option value="" disabled selected hidden>
-                  Select a department...
-                </option>
-<?php foreach ($departments as $department): ?>
-                <option value="<?php echo htmlspecialchars($department['name']); ?>"><?php echo htmlspecialchars($department['department_code'] . ' - ' . $department['name']); ?></option>
-<?php endforeach; ?>
+                <option value="" disabled <?php echo !$editingSection ? 'selected' : ''; ?>>Select a department...</option>
+                <?php foreach ($departments as $department): ?>
+                  <option value="<?php echo htmlspecialchars($department['name']); ?>" <?php echo ($editingSection['department'] ?? '') === $department['name'] ? 'selected' : ''; ?>>
+                    <?php echo htmlspecialchars($department['department_code'] . ' - ' . $department['name']); ?>
+                  </option>
+                <?php endforeach; ?>
               </select>
             </div>
           </div>
           <div class="form-buttons-row">
             <button type="submit" class="btn-submit">
-              <i class="fa-solid fa-plus"></i> Save Section
+              <i class="fa-solid <?php echo $editingSection ? 'fa-floppy-disk' : 'fa-plus'; ?>"></i>
+              <?php echo $editingSection ? 'Update Section' : 'Save Section'; ?>
             </button>
+            <?php if ($editingSection): ?>
+              <a href="section.php" class="btn-cancel">Cancel</a>
+            <?php endif; ?>
           </div>
         </form>
 
@@ -1009,7 +1119,10 @@ if (count($sections)) {
         echo '<td>' . htmlspecialchars($section['school_year'] ?? '') . '</td>';
         echo '<td>' . htmlspecialchars($section['semester'] ?? '') . '</td>';
         echo '<td>' . htmlspecialchars($section['department'] ?? '') . '</td>';
-        echo '<td class="actions-cell"><i class="fa-solid fa-trash-can"></i></td>';
+        echo '<td class="actions-cell">';
+        echo '<a href="?edit_section=' . intval($section['id']) . '#section-form" class="icon-button" title="Edit section" style="text-decoration:none;"><i class="fa-solid fa-pen-to-square" style="color:#10b981;"></i></a>';
+        echo '<form method="post" style="display:inline;" onsubmit="return confirm(\'Delete this section?\');"><input type="hidden" name="delete_section" value="1"><input type="hidden" name="section_id" value="' . intval($section['id']) . '"><button type="submit" class="icon-button" title="Delete section" style="background:transparent;border:none;padding:2px;"><i class="fa-solid fa-trash-can" style="color:#ef4444;"></i></button></form>';
+        echo '</td>';
         echo '</tr>';
     }
 } else {

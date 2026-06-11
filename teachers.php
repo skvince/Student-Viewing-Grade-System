@@ -2,156 +2,89 @@
 <?php
 session_start();
 $teacherSaveError = '';
-$isEditMode = false;
 $editingTeacherId = 0;
 $editingTeacherData = [];
+$departments = [];
 
-// Handle delete teacher
+$conn = db_connect();
+if ($conn) {
+    $res = $conn->query("SELECT id, name FROM departments ORDER BY name ASC");
+    if ($res) {
+        while ($row = $res->fetch_assoc()) $departments[] = $row;
+        $res->free();
+    }
+    $conn->close();
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_teacher'])) {
-  $teacherId = intval($_POST['teacher_id'] ?? 0);
-  if ($teacherId) {
-    $conn = db_connect();
-    if ($conn) {
-      $deleteStmt = $conn->prepare("DELETE FROM teachers WHERE id = ?");
-      if ($deleteStmt) {
-        $deleteStmt->bind_param('i', $teacherId);
-        $deleteStmt->execute();
-        $deleteStmt->close();
+    $teacherId = intval($_POST['teacher_id'] ?? 0);
+    if ($teacherId) {
+        delete_teacher($teacherId);
         audit_log('delete_teacher');
-      }
-      $conn->close();
     }
-  }
-  header('Location: ' . $_SERVER['PHP_SELF']);
-  exit;
-}
-
-// Handle update teacher form submission
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_teacher'])) {
-  $teacherId = intval($_POST['teacher_id'] ?? 0);
-  $name = trim($_POST['name'] ?? '');
-  $email = trim($_POST['email'] ?? '');
-  $password = $_POST['password'] ?? '';
-  $department = trim($_POST['department'] ?? '');
-
-  if (!$teacherId || !$name) {
-    $teacherSaveError = 'Teacher ID and name are required.';
-  } else {
-    $conn = db_connect();
-    if ($conn) {
-      if ($password) {
-        $hash = password_hash($password, PASSWORD_DEFAULT);
-        $updateSql = "UPDATE teachers SET name = ?, email = ?, password_hash = ?, department = ? WHERE id = ?";
-        $stmt = $conn->prepare($updateSql);
-        if (! $stmt && strpos($conn->error, 'password_hash') !== false) {
-          $updateSql = "UPDATE teachers SET name = ?, email = ?, password = ?, department = ? WHERE id = ?";
-          $stmt = $conn->prepare($updateSql);
-        }
-        if ($stmt) {
-          if ($stmt->bind_param('ssssi', $name, $email, $hash, $department, $teacherId) && $stmt->execute()) {
-            audit_log('update_teacher');
-            $stmt->close();
-            $conn->close();
-            header('Location: ' . $_SERVER['PHP_SELF']);
-            exit;
-          } else {
-            $teacherSaveError = 'Teacher update failed: ' . $stmt->error;
-            $stmt->close();
-          }
-        } else {
-          $teacherSaveError = 'Teacher update prepare failed: ' . $conn->error;
-        }
-      } else {
-        $updateSql = "UPDATE teachers SET name = ?, email = ?, department = ? WHERE id = ?";
-        $stmt = $conn->prepare($updateSql);
-        if ($stmt) {
-          if ($stmt->bind_param('sssi', $name, $email, $department, $teacherId) && $stmt->execute()) {
-            audit_log('update_teacher');
-            $stmt->close();
-            $conn->close();
-            header('Location: ' . $_SERVER['PHP_SELF']);
-            exit;
-          } else {
-            $teacherSaveError = 'Teacher update failed: ' . $stmt->error;
-            $stmt->close();
-          }
-        } else {
-          $teacherSaveError = 'Teacher update prepare failed: ' . $conn->error;
-        }
-      }
-      $conn->close();
-    } else {
-      $teacherSaveError = 'Database connection failed';
-    }
-  }
-}
-
-// Handle add teacher form submission
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_teacher'])) {
-  $name = trim($_POST['name'] ?? '');
-  $email = trim($_POST['email'] ?? '');
-  $password = $_POST['password'] ?? '';
-  $department = trim($_POST['department'] ?? '');
-
-  if ($name) {
-    $parts = preg_split('/\s+/', $name);
-    $lastname = strtolower(preg_replace('/[^a-z]/', '', end($parts) ?: $name));
-    if (! $email) {
-      $email = $lastname . '@cscqc.edu.ph';
-    }
-    if (! $password) {
-      $password = $lastname;
-    }
-
-    $conn = db_connect();
-    if ($conn) {
-      $hash = password_hash($password, PASSWORD_DEFAULT);
-      $insertSql = "INSERT INTO teachers (name, email, password_hash, department) VALUES (?, ?, ?, ?)";
-      $stmt = $conn->prepare($insertSql);
-      if (! $stmt && strpos($conn->error, 'Unknown column') !== false && strpos($conn->error, 'password_hash') !== false) {
-        $insertSql = "INSERT INTO teachers (name, email, password, department) VALUES (?, ?, ?, ?)";
-        $stmt = $conn->prepare($insertSql);
-      }
-
-      if ($stmt) {
-        if ($stmt->bind_param('ssss', $name, $email, $hash, $department) && $stmt->execute()) {
-          $newId = $conn->insert_id;
-          if ($newId) {
-            $code = sprintf('T-%03d', $newId);
-            $update = $conn->prepare("UPDATE teachers SET teacher_id = ? WHERE id = ?");
-            if ($update) {
-              if (! $update->bind_param('si', $code, $newId) || ! $update->execute()) {
-                $teacherSaveError = 'Teacher ID update failed: ' . $update->error;
-              }
-              $update->close();
-            } else {
-              $teacherSaveError = 'Teacher ID update prepare failed: ' . $conn->error;
-            }
-          }
-          audit_log('create_teacher');
-        } else {
-          $teacherSaveError = 'Teacher insert failed: ' . $stmt->error;
-        }
-        $stmt->close();
-      } else {
-        $teacherSaveError = 'Teacher insert prepare failed: ' . $conn->error;
-      }
-      $conn->close();
-    } else {
-      $teacherSaveError = 'Database connection failed';
-    }
-  } else {
-    $teacherSaveError = 'Teacher name is required.';
-  }
-
-  if ($teacherSaveError) {
-    // Keep the form visible and show the error instead of redirecting if save failed.
-  } else {
     header('Location: ' . $_SERVER['PHP_SELF']);
     exit;
-  }
 }
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_teacher'])) {
+    $teacherId = intval($_POST['teacher_id'] ?? 0);
+    $firstName = trim($_POST['first_name'] ?? '');
+    $middleName = trim($_POST['middle_name'] ?? '');
+    $lastName = trim($_POST['last_name'] ?? '');
+    $department = trim($_POST['department'] ?? '');
+
+    if (!$teacherId || !$firstName || !$lastName) {
+        $teacherSaveError = 'First name and last name are required.';
+    } else {
+        $ok = update_teacher($teacherId, $firstName, $middleName, $lastName, $department ?: null, null);
+        if ($ok) {
+            audit_log('update_teacher');
+            header('Location: ' . $_SERVER['PHP_SELF']);
+            exit;
+        } else {
+            $teacherSaveError = 'Teacher update failed.';
+        }
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_teacher'])) {
+    $firstName = trim($_POST['first_name'] ?? '');
+    $middleName = trim($_POST['middle_name'] ?? '');
+    $lastName = trim($_POST['last_name'] ?? '');
+    $department = trim($_POST['department'] ?? '');
+
+    if (!$firstName || !$lastName) {
+        $teacherSaveError = 'First name and last name are required.';
+    } else {
+        $result = create_teacher($firstName, $middleName, $lastName, $department ?: null);
+        if ($result['success']) {
+            audit_log('create_teacher');
+            header('Location: ' . $_SERVER['PHP_SELF']);
+            exit;
+        } else {
+            $teacherSaveError = $result['error'];
+        }
+    }
+}
+
+if (isset($_GET['edit_teacher'])) {
+    $editingTeacherId = intval($_GET['edit_teacher']);
+    $conn = db_connect();
+    if ($conn) {
+        $stmt = $conn->prepare("SELECT id, first_name, middle_name, last_name, department FROM teachers WHERE id = ? LIMIT 1");
+        if ($stmt) {
+            $stmt->bind_param('i', $editingTeacherId);
+            $stmt->execute();
+            $res = $stmt->get_result();
+            if ($res && $r = $res->fetch_assoc()) $editingTeacherData = $r;
+            $stmt->close();
+        }
+        $conn->close();
+    }
+}
+
 ?>
+
 <!doctype html>
 <html lang="en">
 
@@ -292,9 +225,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_teacher'])) {
     }
 
     .nav-menu label:hover,
-    .nav-menu a:hover {
-      background-color: #f9fafb;
+    .nav-menu a:hover,
+    .nav-menu a.active {
+      background-color: var(--active-nav-bg);
       color: var(--primary-green);
+      font-weight: 600;
     }
 
     .logout-btn {
@@ -904,14 +839,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_teacher'])) {
         </div>
       </div>
       <nav class="nav-menu" aria-label="Main Navigation">
-        <a href="admin.php" class="nav-link"><i class="fa-solid fa-table-cells-large"></i> Dashboard</a>
-        <a href="teachers.php" class="nav-link"><i class="fa-solid fa-users"></i> Teachers</a>
+        <a href="admin.php" class="nav-link"> <i class="fa-solid fa-table-cells-large"></i> Dashboard</a>
+        <a href="teachers.php" class="nav-link active"><i class="fa-solid fa-users"></i> Teachers</a>
         <a href="section.php" class="nav-link"><i class="fa-solid fa-book-open"></i> Section & Dept</a>
         <a href="students.php" class="nav-link"><i class="fa-solid fa-user-graduate"></i> Students</a>
         <a href="assign.php" class="nav-link"><i class="fa-solid fa-gear"></i> Assign Module</a>
       </nav>
     </div>
-    <a href="#" class="logout-btn">
+    <a href="login.php?logout=1" class="logout-btn">
       <i class="fa-solid fa-right-from-bracket"></i> Logout
     </a>
   </aside>
@@ -988,25 +923,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_teacher'])) {
               <p id="form-subtitle">Enter the teacher details below.</p>
             </div>
             <form method="post" id="teacher-form">
-              <input type="hidden" name="teacher_id" id="teacher-id-field" value="">
-              <div class="form-stack">
+              <input type="hidden" name="teacher_id" id="teacher-id-field" value="<?php echo intval($editingTeacherData['id'] ?? 0); ?>">
+              <div class="grid-3col">
                 <div class="form-group">
-                  <label for="name">Name</label>
-                  <input name="name" id="name" class="form-control" required value="<?php echo htmlspecialchars($_POST['name'] ?? ''); ?>" />
+                  <label for="first_name">First Name</label>
+                  <input type="text" id="first_name" name="first_name" class="form-control" required value="<?php echo htmlspecialchars($editingTeacherData['first_name'] ?? ''); ?>" />
                 </div>
                 <div class="form-group">
-                  <label for="email">Email</label>
-                  <input name="email" id="email" type="email" class="form-control" value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>" />
+                  <label for="middle_name">Middle Name</label>
+                  <input type="text" id="middle_name" name="middle_name" class="form-control" value="<?php echo htmlspecialchars($editingTeacherData['middle_name'] ?? ''); ?>" />
                 </div>
                 <div class="form-group">
-                  <label for="department">Department</label>
-                  <input name="department" id="department" type="text" class="form-control" value="<?php echo htmlspecialchars($_POST['department'] ?? ''); ?>" />
+                  <label for="last_name">Last Name</label>
+                  <input type="text" id="last_name" name="last_name" class="form-control" required value="<?php echo htmlspecialchars($editingTeacherData['last_name'] ?? ''); ?>" />
                 </div>
-                <div class="form-group">
-                  <label for="password">Password</label>
-                  <input name="password" id="password" type="password" class="form-control" id="password-help" />
-                  <small id="password-help" style="color: #666; margin-top: 4px; display: block;"></small>
-                </div>
+              </div>
+              <div class="form-group">
+                <label for="department">Department</label>
+                <select id="department" name="department" class="form-control">
+                  <option value="">Select department...</option>
+                  <?php foreach ($departments as $dept): ?>
+                    <option value="<?php echo htmlspecialchars($dept['name']); ?>" <?php echo ($editingTeacherData['department'] ?? '') === $dept['name'] ? 'selected' : ''; ?>>
+                      <?php echo htmlspecialchars($dept['name']); ?>
+                    </option>
+                  <?php endforeach; ?>
+                </select>
               </div>
               <div class="form-buttons-row card-action-row">
                 <button type="submit" id="submit-btn" name="add_teacher" class="btn-submit">Save Teacher</button>
@@ -1021,94 +962,88 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_teacher'])) {
               <tr>
                 <th>T-ID</th>
                 <th>Name</th>
-                <th>Email</th>
                 <th>Department</th>
                 <th>Password</th>
                 <th>Action</th>
               </tr>
             </thead>
             <tbody>
-<?php
-$conn = db_connect();
-if ($conn) {
-    $res = $conn->query("SELECT id, teacher_id, name, email, department FROM teachers ORDER BY teacher_id DESC");
-    if ($res) {
-        if ($res->num_rows) {
-            while ($row = $res->fetch_assoc()) {
-                echo '<tr>';
-                echo '<td>' . htmlspecialchars($row['teacher_id']) . '</td>';
-                echo '<td>' . htmlspecialchars($row['name']) . '</td>';
-                echo '<td>' . htmlspecialchars($row['email']) . '</td>';
-                echo '<td>' . htmlspecialchars($row['department'] ?? '') . '</td>';
-                echo '<td>••••••••</td>';
-                echo '<td class="actions-cell">';
-                echo '<button type="button" class="icon-button" title="Edit teacher" onclick="editTeacher(' . intval($row['id']) . ', ' . htmlspecialchars(json_encode($row['name'])) . ', ' . htmlspecialchars(json_encode($row['email'])) . ', ' . htmlspecialchars(json_encode($row['department'])) . ')"><i class="fa-solid fa-pen-to-square"></i></button>';
-                echo '<button type="button" class="icon-button" title="Delete teacher" onclick="if(confirm(\'Delete this teacher?\')) { deleteTeacher(' . intval($row['id']) . '); }"><i class="fa-solid fa-trash-can"></i></button>';
-                echo '</td>';
-                echo '</tr>';
+            <?php
+            $conn = db_connect();
+            if ($conn) {
+                $res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name, department FROM teachers ORDER BY last_name ASC, first_name ASC");
+                if ($res) {
+                    if ($res->num_rows) {
+                        while ($row = $res->fetch_assoc()) {
+                            $fullName = htmlspecialchars($row['first_name'] . ' ' . ($row['middle_name'] ? $row['middle_name'] . ' ' : '') . $row['last_name']);
+                            $passwordHint = htmlspecialchars($row['id'] . $row['last_name']);
+                            echo '<tr>';
+                            echo '<td>' . htmlspecialchars($row['teacher_id'] ?? ('T-' . sprintf('%03d', $row['id']))) . '</td>';
+                            echo '<td>' . $fullName . '</td>';
+                            echo '<td>' . htmlspecialchars($row['department'] ?? '') . '</td>';
+                            echo '<td><div class="password-cell"><span class="password-dots" id="pwd-dots-' . intval($row['id']) . '">••••••••</span><span class="password-text" id="pwd-text-' . intval($row['id']) . '" style="display:none;">' . $passwordHint . '</span><button type="button" class="icon-button" onclick="togglePassword(' . intval($row['id']) . ')" title="Show/Hide password"><i class="fa-solid fa-eye" id="pwd-eye-' . intval($row['id']) . '"></i></button></div></td>';
+                            echo '<td class="actions-cell">';
+                            echo '<a href="?edit_teacher=' . intval($row['id']) . '" class="icon-button" title="Edit teacher" style="text-decoration:none;"><i class="fa-solid fa-pen-to-square" style="color:#10b981;"></i></a>';
+                            echo '<form method="post" style="display:inline;" onsubmit="return confirm(\'Delete this teacher?\');"><input type="hidden" name="delete_teacher" value="1"><input type="hidden" name="teacher_id" value="' . intval($row['id']) . '"><button type="submit" class="icon-button" title="Delete teacher"><i class="fa-solid fa-trash-can"></i></button></form>';
+                            echo '</td>';
+                            echo '</tr>';
+                        }
+                    } else {
+                        echo '<tr><td colspan="5" style="text-align:center;color:#6b7280;padding:18px;">No teachers found.</td></tr>';
+                    }
+                } else {
+                    echo '<tr><td colspan="5" style="text-align:center;color:#6b7280;padding:18px;">Query error.</td></tr>';
+                }
+                $conn->close();
+            } else {
+                echo '<tr><td colspan="5" style="text-align:center;color:#6b7280;padding:18px;">Database unavailable.</td></tr>';
             }
-        }
-        if (!$res->num_rows) {
-            echo '<tr><td colspan="6" style="text-align:center; padding:18px;">No teachers found.</td></tr>';
-        }
-    } else {
-        echo '<tr><td colspan="6" style="text-align:center; padding:18px;">Query error: ' . htmlspecialchars($conn->error) . '</td></tr>';
-    }
-    $conn->close();
-} else {
-    echo '<tr><td colspan="6" style="text-align:center; padding:18px;">Database unavailable.</td></tr>';
-}
-?>
+            ?>
             </tbody>
           </table>
         </div>
     </div>
   </div>
   <script>
-    function editTeacher(id, name, email, department) {
-      document.getElementById('teacher-id-field').value = id;
-      document.getElementById('name').value = name;
-      document.getElementById('email').value = email;
-      document.getElementById('department').value = department;
-      document.getElementById('password').value = '';
-      document.getElementById('password-help').textContent = 'Leave blank to keep existing password';
-      document.getElementById('form-title').textContent = 'Edit Teacher';
-      document.getElementById('form-subtitle').textContent = 'Update the teacher details below.';
-      document.getElementById('submit-btn').name = 'update_teacher';
-      document.getElementById('submit-btn').textContent = 'Update Teacher';
-      document.getElementById('teacher-modal-backdrop').style.display = 'flex';
+    function openTeacherModal() {
+      document.getElementById('teacher-modal').style.display = 'flex';
       document.getElementById('btn-add-teacher').style.display = 'none';
     }
-
-    function resetForm() {
-      document.getElementById('teacher-id-field').value = '';
+    function closeTeacherModal() {
+      document.getElementById('teacher-modal').style.display = 'none';
+      document.getElementById('btn-add-teacher').style.display = 'inline-flex';
       document.getElementById('teacher-form').reset();
-      document.getElementById('password-help').textContent = '';
-      document.getElementById('form-title').textContent = 'Add Teacher';
-      document.getElementById('form-subtitle').textContent = 'Enter the teacher details below.';
-      document.getElementById('submit-btn').name = 'add_teacher';
-      document.getElementById('submit-btn').textContent = 'Save Teacher';
+      document.getElementById('teacher-id-field').value = '';
+      document.getElementById('modal-title').textContent = 'Add Teacher';
+      const submitBtn = document.querySelector('#teacher-form button[type="submit"]');
+      submitBtn.name = 'add_teacher';
+      submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Teacher';
     }
-
-    function deleteTeacher(id) {
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.innerHTML = '<input type="hidden" name="delete_teacher" value="1"><input type="hidden" name="teacher_id" value="' + id + '">';
-      document.body.appendChild(form);
-      form.submit();
+    function togglePassword(id) {
+      const dots = document.getElementById('pwd-dots-' + id);
+      const text = document.getElementById('pwd-text-' + id);
+      const eye = document.getElementById('pwd-eye-' + id);
+      if (dots.style.display === 'none') {
+        dots.style.display = '';
+        text.style.display = 'none';
+        eye.className = 'fa-solid fa-eye';
+      } else {
+        dots.style.display = 'none';
+        text.style.display = '';
+        eye.className = 'fa-solid fa-eye-slash';
+      }
     }
-
+    function filterTeachers(query) {
+      query = query.toLowerCase();
+      document.querySelectorAll('#teachers-table tbody tr').forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
+      });
+    }
     document.querySelectorAll('.table-search-input').forEach(input => {
       input.addEventListener('input', function() {
-        const query = this.value.toLowerCase();
-        document.querySelectorAll('#teachers-table tbody tr').forEach(row => {
-          row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
-        });
+        filterTeachers(this.value);
       });
     });
-
-    // Reset form when closing modal
-    document.getElementById('btn-add-teacher').addEventListener('click', resetForm);
   </script>
 </body>
 </html>
