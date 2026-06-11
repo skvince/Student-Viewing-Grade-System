@@ -8,10 +8,11 @@ $saveError = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_assignment'])) {
     $assignmentId = intval($_POST['assignment_id'] ?? 0);
+
     if ($assignmentId) {
         $conn = db_connect();
         if ($conn) {
-            $deleteStmt = $conn->prepare("DELETE FROM assignments WHERE id = ?");
+            $deleteStmt = $conn->prepare("DELETE FROM assignments WHERE id = ? LIMIT 1");
             if ($deleteStmt) {
                 $deleteStmt->bind_param('i', $assignmentId);
                 $deleteStmt->execute();
@@ -21,9 +22,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_assignment']))
             $conn->close();
         }
     }
+
+    // Redirect back so the assignments list is reloaded from DB.
     header('Location: ' . $_SERVER['PHP_SELF']);
     exit;
 }
+
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_assignment'])) {
     $teacherId = intval($_POST['teacher_id'] ?? 0);
@@ -1117,30 +1121,37 @@ if (count($assignments)) {
         return assignedModules;
       }
 
-      function addSubjectRow(code, title, year, semester) {
+function addSubjectRow(code, title, year, semester) {
         const row = document.createElement('tr');
         const assignedModules = getAssignedModules();
-        const isAssigned = assignedModules.has(code);
-        
+        // Assignments table stores module as FREE TEXT right now.
+        // The subject registry uses subject code. So compare with the same value:
+        // - If module is stored as "CODE" -> compare code
+        // - If module is stored as "CODE - Title" -> compare by prefix
+        const isAssigned = Array.from(assignedModules).some(m => {
+          if (!m) return false;
+          return m === code || m.startsWith(code + ' ') || m.startsWith(code + ' -') || m.includes(code);
+        });
+
         row.innerHTML = `
           <td>${code}</td>
           <td>${title}</td>
           <td>${year}</td>
           <td>${semester}</td>
           <td class="actions-cell">
-            ${isAssigned 
-              ? '<span title="Cannot delete: This subject is already assigned" style="color: #999; cursor: not-allowed;"><i class="fa-solid fa-lock" style="color: #999;"></i></span>' 
+            ${isAssigned
+              ? '<span title="Cannot delete: This subject is already assigned" style="color: #999; cursor: not-allowed;"><i class="fa-solid fa-lock" style="color: #999;"></i></span>'
               : '<i class="fa-solid fa-trash-can" role="button" aria-label="Delete subject" style="color: #ef4444; cursor: pointer;"></i>'}
           </td>
         `;
-        
+
         if (!isAssigned) {
           row.querySelector('.fa-trash-can').addEventListener('click', () => {
             row.remove();
             removeSubjectOption(code);
           });
         }
-        
+
         subjectTableBody.appendChild(row);
       }
 

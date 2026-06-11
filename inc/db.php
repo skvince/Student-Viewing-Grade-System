@@ -48,7 +48,10 @@ function db_initialize_schema(mysqli $conn): void {
 CREATE TABLE IF NOT EXISTS teachers (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   teacher_id VARCHAR(32) DEFAULT NULL,
-  name VARCHAR(255) NOT NULL,
+  first_name VARCHAR(100) NOT NULL,
+  middle_name VARCHAR(100) DEFAULT NULL,
+  last_name VARCHAR(100) NOT NULL,
+  name VARCHAR(255) DEFAULT NULL,
   email VARCHAR(255) NOT NULL,
   password_hash VARCHAR(255) DEFAULT NULL,
   password VARCHAR(255) DEFAULT NULL,
@@ -62,7 +65,10 @@ SQL,
 CREATE TABLE IF NOT EXISTS students (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   student_id VARCHAR(32) DEFAULT NULL,
-  name VARCHAR(255) NOT NULL,
+  first_name VARCHAR(100) NOT NULL,
+  middle_name VARCHAR(100) DEFAULT NULL,
+  last_name VARCHAR(100) NOT NULL,
+  name VARCHAR(255) DEFAULT NULL,
   email VARCHAR(255) NOT NULL,
   password_hash VARCHAR(255) DEFAULT NULL,
   password VARCHAR(255) DEFAULT NULL,
@@ -86,16 +92,31 @@ CREATE TABLE IF NOT EXISTS sections (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 SQL,
         <<<'SQL'
+CREATE TABLE IF NOT EXISTS subjects (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  subject_code VARCHAR(64) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  school_year VARCHAR(20) DEFAULT NULL,
+  semester VARCHAR(20) DEFAULT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_subject_code (subject_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+SQL,
+        <<<'SQL'
 CREATE TABLE IF NOT EXISTS assignments (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   teacher_id INT UNSIGNED NOT NULL,
   section_id INT UNSIGNED NOT NULL,
-  module VARCHAR(255) DEFAULT NULL,
+  subject_id INT UNSIGNED DEFAULT NULL,
   school_year VARCHAR(20) DEFAULT NULL,
   semester VARCHAR(20) DEFAULT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_assignment_teacher (teacher_id),
-  INDEX idx_assignment_section (section_id)
+  INDEX idx_assignment_section (section_id),
+  INDEX idx_assignment_subject (subject_id),
+  CONSTRAINT fk_assignments_teacher FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE RESTRICT,
+  CONSTRAINT fk_assignments_section FOREIGN KEY (section_id) REFERENCES sections (id) ON DELETE RESTRICT,
+  CONSTRAINT fk_assignments_subject FOREIGN KEY (subject_id) REFERENCES subjects (id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 SQL,
         <<<'SQL'
