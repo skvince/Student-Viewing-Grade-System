@@ -720,7 +720,13 @@ if ($conn) {
         <a href="assign.php"><i class="fa-solid fa-gear"></i> Assign Module</a>
       </nav>
     </div>
+<<<<<<< Updated upstream
     <a href="login.php?logout=1" class="logout-btn"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
+=======
+    <a href="login.php?logout=1" class="logout-btn">
+      <i class="fa-solid fa-right-from-bracket"></i> Logout
+    </a>
+>>>>>>> Stashed changes
   </aside>
   <div class="main-content">
     <div class="global-term-container">

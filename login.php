@@ -19,8 +19,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    if (!$username || !$password) {
-        $loginError = 'Username and password are required.';
+  if (! $username || ! $password) {
+    $loginError = 'Username and password are required.';
+  } else {
+    $conn = db_connect();
+    if (! $conn) {
+      $loginError = 'Database connection failed.';
     } else {
         $user = authenticate_user($username, $password);
         if ($user) {
