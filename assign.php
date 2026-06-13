@@ -7,6 +7,10 @@ if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
     exit;
 }
 
+$term = get_global_term();
+$selectedYear = $term['year'];
+$selectedSem  = $term['semester'];
+
 $teachers     = [];
 $sections     = [];
 $subjects     = [];
@@ -21,6 +25,8 @@ $editSubjectId = isset($_GET['edit_subject']) ? intval($_GET['edit_subject']) : 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_assignment'])) {
     $assignmentId = intval($_POST['assignment_id'] ?? 0);
     if ($assignmentId) {
+        // deletion is term-scoped by the record itself; no extra term filter needed here
+        
         $conn = db_connect();
         if ($conn) {
             $st = $conn->prepare("DELETE FROM assignments WHERE id = ? LIMIT 1");
@@ -278,6 +284,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_assignment']))
 $conn = db_connect();
 if ($conn) {
 
+    // Escape global term early (used by Sections/Subjects queries)
+    $escapedYear = $conn->real_escape_string($selectedYear);
+    $escapedSem  = $conn->real_escape_string($selectedSem);
+
     // Teachers
     $res = $conn->query("SELECT id, teacher_id, name FROM teachers ORDER BY name ASC");
     if ($res) {
@@ -285,23 +295,23 @@ if ($conn) {
         $res->free();
     }
 
-    // Sections
-    $res = $conn->query("SELECT id, section_code, name FROM sections ORDER BY created_at DESC");
+    // Sections — filtered by global term
+    $res = $conn->query("SELECT id, section_code, name FROM sections WHERE school_year = '" . $escapedYear . "' AND semester = '" . $escapedSem . "' ORDER BY created_at DESC");
     if ($res) {
         while ($row = $res->fetch_assoc()) $sections[] = $row;
         $res->free();
     }
 
-    // Subjects — loaded from DB, not from JS DOM
+    // Subjects — loaded from DB, filtered by global term, not from JS DOM
     $res = $conn->query(
-        "SELECT id, subject_code, title, units, school_year, semester FROM subjects ORDER BY subject_code ASC"
+        "SELECT id, subject_code, title, units, school_year, semester FROM subjects WHERE school_year = '" . $escapedYear . "' AND semester = '" . $escapedSem . "' ORDER BY subject_code ASC"
     );
     if ($res) {
         while ($row = $res->fetch_assoc()) $subjects[] = $row;
         $res->free();
     }
 
-    // Assignments — JOIN to get live subject info; don't rely on free-text module column
+    // Assignments — JOIN to get live subject info; filtered by global term
     $res = $conn->query(
         "SELECT
              a.id           AS assignment_id,
@@ -316,6 +326,7 @@ if ($conn) {
          LEFT JOIN teachers  t  ON a.teacher_id  = t.id
          LEFT JOIN sections  s  ON a.section_id  = s.id
          LEFT JOIN subjects  sj ON a.subject_id  = sj.id
+         WHERE a.school_year = '" . $escapedYear . "' AND a.semester = '" . $escapedSem . "'
          ORDER BY a.created_at DESC"
     );
     if ($res) {
@@ -487,16 +498,17 @@ $assignedSubjectIds = array_unique(
     <div class="global-term-container">
       <div class="filter-group">
         <label for="global-filter-year"><i class="fa-solid fa-calendar-days"></i> Academic Year:</label>
-        <select id="global-filter-year" class="global-select">
-          <option value="2025-2026">2025–2026</option>
-          <option value="2024-2025">2024–2025</option>
+        <select id="global-filter-year" class="global-select" onchange="syncGlobalFilter()">
+          <option value="2025-2026" <?php echo $selectedYear==='2025-2026'?'selected':''; ?>>2025–2026</option>
+          <option value="2026-2027" <?php echo $selectedYear==='2026-2027'?'selected':''; ?>>2026–2027</option>
         </select>
       </div>
       <div class="filter-group">
         <label for="global-filter-sem"><i class="fa-solid fa-clock"></i> Semester:</label>
-        <select id="global-filter-sem" class="global-select">
-          <option value="1st Semester">1st Semester</option>
-          <option value="2nd Semester">2nd Semester</option>
+        <select id="global-filter-sem" class="global-select" onchange="syncGlobalFilter()">
+          <option value="1st Semester" <?php echo $selectedSem==='1st Semester'?'selected':''; ?>>1st Semester</option>
+          <option value="2nd Semester" <?php echo $selectedSem==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
+          <option value="Summer" <?php echo $selectedSem==='Summer'?'selected':''; ?>>Summer</option>
         </select>
       </div>
     </div>
@@ -546,16 +558,17 @@ $assignedSubjectIds = array_unique(
             <label for="sub-year-select">School Year</label>
             <select id="sub-year-select" name="sub_school_year" class="form-control" required>
               <option value="" disabled <?= $editSubject ? '' : 'selected' ?>>Select academic year...</option>
-              <option value="2025-2026" <?= ($editSubject['school_year'] ?? '') === '2025-2026' ? 'selected' : '' ?>>S.Y. 2025-2026</option>
-              <option value="2026-2027" <?= ($editSubject['school_year'] ?? '') === '2026-2027' ? 'selected' : '' ?>>S.Y. 2026-2027</option>
+              <option value="2025-2026" <?= ($editSubject['school_year'] ?? $selectedYear) === '2025-2026' ? 'selected' : '' ?>>S.Y. 2025-2026</option>
+              <option value="2026-2027" <?= ($editSubject['school_year'] ?? $selectedYear) === '2026-2027' ? 'selected' : '' ?>>S.Y. 2026-2027</option>
             </select>
           </div>
           <div class="form-group">
             <label for="sub-sem-select">Semester</label>
             <select id="sub-sem-select" name="sub_semester" class="form-control" required>
               <option value="" disabled <?= $editSubject ? '' : 'selected' ?>>Select semester...</option>
-              <option value="1st Semester" <?= ($editSubject['semester'] ?? '') === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
-              <option value="2nd Semester" <?= ($editSubject['semester'] ?? '') === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
+              <option value="1st Semester" <?= ($editSubject['semester'] ?? $selectedSem) === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
+              <option value="2nd Semester" <?= ($editSubject['semester'] ?? $selectedSem) === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
+              <option value="Summer" <?= ($editSubject['semester'] ?? $selectedSem) === 'Summer' ? 'selected' : '' ?>>Summer</option>
             </select>
           </div>
         </div>
@@ -575,12 +588,6 @@ $assignedSubjectIds = array_unique(
 
       <!-- Subject table -->
       <div style="margin-top:20px;">
-        <div class="search-bar-wrap">
-          <div class="search-bar-inner">
-            <i class="fa-solid fa-magnifying-glass"></i>
-            <input type="text" class="table-search-input" placeholder="Search subjects..." />
-          </div>
-        </div>
       <div class="table-responsive">
         <div class="search-bar-wrap">
           <div class="search-bar-inner">
@@ -700,21 +707,19 @@ $assignedSubjectIds = array_unique(
 
             <div class="form-group">
               <label for="select-school-year">School Year</label>
-              <select id="select-school-year" name="school_year" class="form-control" required>
-                <option value="" disabled selected hidden>Select school year...</option>
-                <option value="2025-2026">S.Y. 2025-2026</option>
-                <option value="2026-2027">S.Y. 2026-2027</option>
+              <select id="select-school-year" name="school_year" class="form-control" required disabled>
+                <option value="<?php echo htmlspecialchars($selectedYear); ?>" selected><?php echo htmlspecialchars($selectedYear); ?></option>
               </select>
+              <input type="hidden" name="school_year" value="<?php echo htmlspecialchars($selectedYear); ?>">
             </div>
           </div>
 
           <div class="form-group">
             <label for="select-semester">Semester</label>
-            <select id="select-semester" name="semester" class="form-control" required>
-              <option value="" disabled selected hidden>Select semester...</option>
-              <option value="1st Semester">1st Semester</option>
-              <option value="2nd Semester">2nd Semester</option>
-            </select>
+              <select id="select-semester" name="semester" class="form-control" required disabled>
+                <option value="<?php echo htmlspecialchars($selectedSem); ?>" selected><?php echo htmlspecialchars($selectedSem); ?></option>
+              </select>
+              <input type="hidden" name="semester" value="<?php echo htmlspecialchars($selectedSem); ?>">
           </div>
 
           <div class="form-buttons-row">
@@ -845,6 +850,7 @@ $assignedSubjectIds = array_unique(
               <option value="" disabled selected hidden>Select semester...</option>
               <option value="1st Semester">1st Semester</option>
               <option value="2nd Semester">2nd Semester</option>
+              <option value="Summer">Summer</option>
             </select>
           </div>
           <div class="form-buttons-row">
@@ -858,7 +864,19 @@ $assignedSubjectIds = array_unique(
   </div><!-- /.main-content -->
 
   <script>
-  document.addEventListener('DOMContentLoaded', function () {
+    function syncGlobalFilter() {
+      const year = document.getElementById('global-filter-year').value;
+      const sem  = document.getElementById('global-filter-sem').value;
+      const url  = new URL(window.location);
+      url.searchParams.set('global_year', year);
+      url.searchParams.set('global_sem', sem);
+      url.searchParams.delete('school_year');
+      url.searchParams.delete('semester');
+      url.searchParams.delete('academic_year');
+      window.location.href = url.toString();
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
     const modal = document.getElementById('edit-modal');
     const btnClose = document.getElementById('btn-close-modal');
 

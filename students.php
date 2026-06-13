@@ -2,6 +2,9 @@
 <?php
 ob_start();
 session_start();
+$term = get_global_term();
+$selectedYear = $term['year'];
+$selectedSem  = $term['semester'];
 $studentSaveError = '';
     $submittedFirstName = '';
     $submittedMiddleName = '';
@@ -13,12 +16,16 @@ $studentSaveError = '';
 
     $conn = db_connect();
     if ($conn) {
-        $res = $conn->query("SELECT id, name FROM departments ORDER BY name ASC");
-        if ($res) {
-            while ($row = $res->fetch_assoc()) $departments[] = $row;
-            $res->free();
+      $escapedYear = $conn->real_escape_string($selectedYear);
+      $escapedSem  = $conn->real_escape_string($selectedSem);
+      $sectionRes = $conn->query("SELECT id, section_code, name FROM sections WHERE school_year = '" . $escapedYear . "' AND semester = '" . $escapedSem . "' ORDER BY name ASC");
+      if ($sectionRes) {
+        while ($row = $sectionRes->fetch_assoc()) {
+          $sections[] = $row;
         }
-        $conn->close();
+        $sectionRes->free();
+      }
+      $conn->close();
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_student'])) {
@@ -80,7 +87,9 @@ $studentSaveError = '';
 
     $conn = db_connect();
     if ($conn) {
-      $sectionRes = $conn->query("SELECT id, section_code, name FROM sections ORDER BY name ASC");
+      $escapedYear = $conn->real_escape_string($selectedYear);
+      $escapedSem  = $conn->real_escape_string($selectedSem);
+      $sectionRes = $conn->query("SELECT id, section_code, name FROM sections WHERE school_year = '" . $escapedYear . "' AND semester = '" . $escapedSem . "' ORDER BY name ASC");
       if ($sectionRes) {
         while ($row = $sectionRes->fetch_assoc()) {
           $sections[] = $row;
@@ -902,9 +911,9 @@ $studentSaveError = '';
               <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
               Academic Year:
             </label>
-            <select id="global-filter-year" class="global-select">
-              <option value="2025-2026">2025–2026</option>
-              <option value="2024-2025">2024–2025</option>
+            <select id="global-filter-year" class="global-select" onchange="syncGlobalFilter()">
+              <option value="2025-2026" <?php echo $selectedYear==='2025-2026'?'selected':''; ?>>2025–2026</option>
+              <option value="2026-2027" <?php echo $selectedYear==='2026-2027'?'selected':''; ?>>2026–2027</option>
             </select>
           </div>
 
@@ -912,10 +921,11 @@ $studentSaveError = '';
             <label for="global-filter-sem">
               <i class="fa-solid fa-clock" aria-hidden="true"></i> Semester:
             </label>
-            <select id="global-filter-sem" class="global-select">
-              <option value="1st Semester">1st Semester</option>
-              <option value="2nd Semester">2nd Semester</option>
-            </select>
+              <select id="global-filter-sem" class="global-select" onchange="syncGlobalFilter()">
+                <option value="1st Semester" <?php echo $selectedSem==='1st Semester'?'selected':''; ?>>1st Semester</option>
+                <option value="2nd Semester" <?php echo $selectedSem==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
+                <option value="Summer" <?php echo $selectedSem==='Summer'?'selected':''; ?>>Summer</option>
+              </select>
           </div>
         </div>
 
@@ -1027,6 +1037,9 @@ $studentSaveError = '';
             <?php
             $conn = db_connect();
             if ($conn) {
+                $escapedYear = $conn->real_escape_string($selectedYear);
+                $escapedSem  = $conn->real_escape_string($selectedSem);
+// Keep students registry term-agnostic (global filter should not hide CRUD rows)
                 $res = $conn->query(
                     "SELECT s.id, s.student_id, s.first_name, s.middle_name, s.last_name, s.section_id, s.department, sec.name AS section_name, sec.section_code " .
                     "FROM students s " .
@@ -1082,6 +1095,18 @@ $studentSaveError = '';
           document.getElementById('submit-btn').textContent = 'Update Student';
           document.getElementById('modal-backdrop').style.display = 'flex';
           document.getElementById('btn-add-student').style.display = 'none';
+        }
+
+        function syncGlobalFilter() {
+          const year = document.getElementById('global-filter-year').value;
+          const sem  = document.getElementById('global-filter-sem').value;
+          const url  = new URL(window.location);
+          url.searchParams.set('global_year', year);
+          url.searchParams.set('global_sem', sem);
+          url.searchParams.delete('school_year');
+          url.searchParams.delete('semester');
+          url.searchParams.delete('academic_year');
+          window.location.href = url.toString();
         }
 
         function resetForm() {

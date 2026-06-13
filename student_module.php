@@ -29,35 +29,64 @@ if ($conn) {
     $conn->close();
 }
 
-$filterYear = $_GET['academic_year'] ?? '';
-$filterSem = $_GET['semester'] ?? '';
-$grades = get_student_grades($userId, $filterYear, $filterSem);
-$assignedSubjects = get_student_assigned_subjects($userId, $filterYear, $filterSem);
+$term = get_global_term();
+$filterYear = $term['year'];
+$filterSem  = $term['semester'];
 
-$terms = get_available_terms($userId, 'student');
-$yearOptions = $terms['years'] ?? [];
-$semOptions = $terms['semesters'] ?? [];
+// Keep student term consistent with the global filter.
+$_SESSION['student_filter_year'] = $filterYear;
+$_SESSION['student_filter_sem']  = $filterSem;
 
-if (empty($yearOptions)) $yearOptions = ['2025-2026','2024-2025','2026-2027'];
-if (empty($semOptions)) $semOptions = ['1st Semester','2nd Semester'];
 
-if (!$filterYear && !empty($yearOptions)) $filterYear = $yearOptions[0];
-if (!$filterSem && !empty($semOptions)) $filterSem = $semOptions[0];
+$validPairs = get_student_valid_terms($userId);
+$allTerms = get_available_terms($userId, 'student');
+$defaultYearOptions = get_term_options()['years'];
+$yearOptions = $allTerms['years'] ?: $defaultYearOptions;
+$yearOptions = array_values(array_unique(array_merge($yearOptions, $defaultYearOptions)));
+
+$selectedYear = $filterYear;
+$selectedSem  = $filterSem;
+
+if (!$selectedYear) $selectedYear = $yearOptions[0] ?? '2025-2026';
+if (!$selectedSem) $selectedSem = '1st Semester';
+
+$hasExplicitTerm = isset($_GET['global_year'], $_GET['global_sem']) || isset($_GET['school_year'], $_GET['semester']) || isset($_GET['academic_year'], $_GET['semester']);
+if (!$hasExplicitTerm) {
+    $autoTerm = get_first_available_student_term($validPairs, $selectedYear);
+    if ($autoTerm) {
+        $selectedYear = $autoTerm['year'];
+        $selectedSem  = $autoTerm['semester'];
+    }
+}
+
+$semOptions = get_semesters_for_year($validPairs, $selectedYear);
+if (empty($semOptions)) $semOptions = ['1st Semester', '2nd Semester', 'Summer'];
+if (!in_array($selectedSem, $semOptions, true)) $semOptions[] = $selectedSem;
+
+$_SESSION['student_filter_year'] = $selectedYear;
+$_SESSION['student_filter_sem']  = $selectedSem;
+
+$grades = get_student_grades($userId, $selectedYear, $selectedSem);
+$assignedSubjects = get_student_assigned_subjects($userId, $selectedYear, $selectedSem);
 
 $displayRows = [];
+$seenSubjectCodes = [];
+
 foreach ($assignedSubjects as $subj) {
-    $key = ($subj['subject_code'] ?? '') . '|' . ($subj['title'] ?? '');
+    $subjectCode = $subj['subject_code'] ?? '';
     $gradeMatch = null;
+
     foreach ($grades as $g) {
-        if (($g['subject_code'] ?? '') === ($subj['subject_code'] ?? '')) {
+        if (($g['subject_code'] ?? '') === $subjectCode) {
             $gradeMatch = $g;
             break;
         }
     }
+
     $displayRows[] = [
-        'subject_code' => $subj['subject_code'] ?? '',
-        'subject_title' => $subj['title'] ?? '',
-        'units' => $subj['units'] ?? 3,
+        'subject_code' => $subjectCode,
+        'subject_title' => $subj['title'] ?? ($gradeMatch['subject_title'] ?? ''),
+        'units' => $subj['units'] ?? ($gradeMatch['units'] ?? 3),
         'prelim' => $gradeMatch['prelim'] ?? null,
         'midterm' => $gradeMatch['midterm'] ?? null,
         'finals' => $gradeMatch['finals'] ?? null,
@@ -65,6 +94,25 @@ foreach ($assignedSubjects as $subj) {
         'gwa' => $gradeMatch['gwa'] ?? null,
         'remarks' => $gradeMatch['remarks'] ?? null,
     ];
+    $seenSubjectCodes[$subjectCode] = true;
+}
+
+foreach ($grades as $g) {
+    $subjectCode = $g['subject_code'] ?? '';
+    if ($subjectCode === '' || isset($seenSubjectCodes[$subjectCode])) continue;
+
+    $displayRows[] = [
+        'subject_code' => $subjectCode,
+        'subject_title' => $g['subject_title'] ?? '',
+        'units' => $g['units'] ?? 3,
+        'prelim' => $g['prelim'] ?? null,
+        'midterm' => $g['midterm'] ?? null,
+        'finals' => $g['finals'] ?? null,
+        'average' => $g['average'] ?? null,
+        'gwa' => $g['gwa'] ?? null,
+        'remarks' => $g['remarks'] ?? null,
+    ];
+    $seenSubjectCodes[$subjectCode] = true;
 }
 
 $totalUnits = 0;
@@ -153,12 +201,12 @@ $totalAvg = $totalUnits > 0 ? $totalWeightedAvg / $totalUnits : 0;
       <fieldset style="border:none;">
         <legend>Select Year & Semester</legend>
         <div class="filter-group-selectors">
-          <select name="academic_year" class="form-control" onchange="this.form.submit()">
+          <select name="global_year" class="form-control" onchange="this.form.submit()">
             <?php foreach ($yearOptions as $y): ?>
               <option value="<?php echo htmlspecialchars($y); ?>" <?php echo $filterYear===$y?'selected':''; ?>><?php echo htmlspecialchars($y); ?></option>
             <?php endforeach; ?>
           </select>
-          <select name="semester" class="form-control" onchange="this.form.submit()">
+          <select name="global_sem" class="form-control" onchange="this.form.submit()">
             <?php foreach ($semOptions as $s): ?>
               <option value="<?php echo htmlspecialchars($s); ?>" <?php echo $filterSem===$s?'selected':''; ?>><?php echo htmlspecialchars($s); ?></option>
             <?php endforeach; ?>
@@ -190,7 +238,7 @@ $totalAvg = $totalUnits > 0 ? $totalWeightedAvg / $totalUnits : 0;
           </thead>
           <tbody id="student-grades-table-body">
             <?php if (empty($displayRows)): ?>
-              <tr><td colspan="9" style="text-align:center;color:#666;padding:24px;">No subjects assigned for this term.</td></tr>
+              <tr><td colspan="9" style="text-align:center;color:#666;padding:24px;">No subjects assigned for School Year <?php echo htmlspecialchars($filterYear ?: ''); ?> / <?php echo htmlspecialchars($filterSem ?: ''); ?>.</td></tr>
             <?php else: ?>
               <?php foreach ($displayRows as $g): ?>
                 <tr>

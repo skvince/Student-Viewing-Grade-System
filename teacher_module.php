@@ -2,7 +2,6 @@
 require_once __DIR__ . '/inc/functions.php'; 
 session_start();
 
-// --- Authentication & Session Management ---
 if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'teacher') {
     if (isset($_GET['teacher_id'])) {
         $_SESSION['user_role'] = 'teacher';
@@ -31,9 +30,15 @@ if ($conn) {
     $conn->close();
 }
 
-// --- Data Preparation ---
-$schoolYear = $_GET['school_year'] ?? '2025-2026';
-$semester = $_GET['semester'] ?? '1st Semester';
+$term = get_global_term();
+$schoolYear = $term['year'];
+$semester   = $term['semester'];
+
+// Keep teacher term consistent with the global filter.
+// (Avoid mixing legacy GET parameters that can cause semester flips.)
+$_SESSION['teacher_sy']  = $schoolYear;
+$_SESSION['teacher_sem'] = $semester;
+
 $assignments = get_teacher_assignments($userId, $schoolYear, $semester);
 $sections = [];
 
@@ -95,7 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_grades'])) {
     }
     
     audit_log('save_grades', $userId);
-    header('Location: ' . $_SERVER['PHP_SELF'] . '?section_id=' . $sectionId . '&subject_id=' . $subjectId . '&school_year=' . urlencode($sy) . '&semester=' . urlencode($sem));
+     header('Location: ' . $_SERVER['PHP_SELF'] . '?section_id=' . $sectionId . '&subject_id=' . $subjectId . '&global_year=' . urlencode($schoolYear) . '&global_sem=' . urlencode($semester));
     exit;
 }
 ?>
@@ -174,15 +179,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_grades'])) {
         <div class="global-term-container">
             <div class="filter-group">
                 <label for="global-sy-select"><i class="fa-solid fa-calendar-days"></i> Academic Year:</label>
-                <select id="global-sy-select" class="global-select" onchange="window.location.href='?school_year='+this.value+'&semester=<?php echo urlencode($semester); ?>'">
-                    <?php foreach (['2025-2026','2024-2025','2026-2027'] as $y): ?>
+                <select id="global-sy-select" class="global-select" onchange="syncTeacherFilter()">
+                    <?php foreach (['2025-2026','2026-2027'] as $y): ?>
                         <option value="<?php echo $y; ?>" <?php echo $schoolYear===$y?'selected':''; ?>><?php echo $y; ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
             <div class="filter-group">
                 <label for="global-sem-select"><i class="fa-solid fa-clock"></i> Semester:</label>
-                <select id="global-sem-select" class="global-select" onchange="window.location.href='?semester='+this.value+'&school_year=<?php echo urlencode($schoolYear); ?>'">
+                <select id="global-sem-select" class="global-select" onchange="syncTeacherFilter()">
                     <option value="1st Semester" <?php echo $semester==='1st Semester'?'selected':''; ?>>1st Semester</option>
                     <option value="2nd Semester" <?php echo $semester==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
                     <option value="Summer" <?php echo $semester==='Summer'?'selected':''; ?>>Summer</option>
@@ -207,7 +212,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_grades'])) {
                                 <td><?php echo htmlspecialchars($sec['name']); ?></td>
                                 <td><?php echo htmlspecialchars($sec['department'] ?? 'N/A'); ?></td>
                                 <td><?php echo count($sec['subjects']); ?></td>
-                                <td><a href="?section_id=<?php echo $sec['id']; ?>&school_year=<?php echo urlencode($schoolYear); ?>&semester=<?php echo urlencode($semester); ?>" style="padding:6px 14px; background-color:var(--primary-green); color:white; border-radius:6px; text-decoration:none;">Select</a></td>
+                                <td><a href="?section_id=<?php echo $sec['id']; ?>&global_year=<?php echo urlencode($schoolYear); ?>&global_sem=<?php echo urlencode($semester); ?>" style="padding:6px 14px; background-color:var(--primary-green); color:white; border-radius:6px; text-decoration:none;">Select</a></td>
                             </tr>
                         <?php endforeach; endif; ?>
                     </tbody>
@@ -229,7 +234,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_grades'])) {
                                     <td><strong><?php echo htmlspecialchars($subj['code']); ?></strong></td>
                                     <td><?php echo htmlspecialchars($subj['title']); ?></td>
                                     <td><?php echo htmlspecialchars($subj['units']); ?></td>
-                                    <td><a href="?section_id=<?php echo $activeSectionId; ?>&subject_id=<?php echo $subj['subject_id']; ?>&school_year=<?php echo urlencode($schoolYear); ?>&semester=<?php echo urlencode($semester); ?>" style="padding:6px 14px; background-color:var(--primary-green); color:white; border-radius:6px; text-decoration:none;">Select</a></td>
+                                    <td><a href="?section_id=<?php echo $activeSectionId; ?>&subject_id=<?php echo $subj['subject_id']; ?>&global_year=<?php echo urlencode($schoolYear); ?>&global_sem=<?php echo urlencode($semester); ?>" style="padding:6px 14px; background-color:var(--primary-green); color:white; border-radius:6px; text-decoration:none;">Select</a></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -238,7 +243,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_grades'])) {
             </div>
 
         <?php else: ?>
-            <a href="?school_year=<?php echo urlencode($schoolYear); ?>&semester=<?php echo urlencode($semester); ?>" class="btn-back"><i class="fa-solid fa-arrow-left"></i> Back to Sections</a>
+            <a href="?global_year=<?php echo urlencode($schoolYear); ?>&global_sem=<?php echo urlencode($semester); ?>" class="btn-back"><i class="fa-solid fa-arrow-left"></i> Back to Sections</a>
             <h1 class="view-title">Class Grades</h1>
             <p class="view-subtitle"><?php echo htmlspecialchars("$schoolYear | $semester"); ?></p>
 
@@ -280,6 +285,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_grades'])) {
     </main>
 
     <script>
+        function syncTeacherFilter() {
+            const year = document.getElementById('global-sy-select').value;
+            const sem  = document.getElementById('global-sem-select').value;
+            const url  = new URL(window.location);
+            url.searchParams.set('global_year', year);
+            url.searchParams.set('global_sem', sem);
+            url.searchParams.delete('school_year');
+            url.searchParams.delete('semester');
+            url.searchParams.delete('academic_year');
+            window.location.href = url.toString();
+        }
+
         // Grade Calculation Logic
         document.querySelectorAll('.grade-input').forEach(input => {
             input.addEventListener('input', function() {

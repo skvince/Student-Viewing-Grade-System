@@ -6,6 +6,10 @@ if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
     exit;
 }
 
+$term = get_global_term();
+$selectedYear = $term['year'];
+$selectedSem  = $term['semester'];
+
 $totalTeachers = 0;
 $totalStudents = 0;
 $totalAssignments = 0;
@@ -13,29 +17,15 @@ $recentAssignments = [];
 
 $conn = db_connect();
 if ($conn) {
-    $res = $conn->query("SELECT COUNT(*) AS count FROM teachers");
-    if ($res) {
-        $row = $res->fetch_assoc();
-        $totalTeachers = intval($row['count'] ?? 0);
-        $res->free();
-    }
-    $res = $conn->query("SELECT COUNT(*) AS count FROM students");
-    if ($res) {
-        $row = $res->fetch_assoc();
-        $totalStudents = intval($row['count'] ?? 0);
-        $res->free();
-    }
-    $res = $conn->query("SELECT COUNT(*) AS count FROM assignments");
-    if ($res) {
-        $row = $res->fetch_assoc();
-        $totalAssignments = intval($row['count'] ?? 0);
-        $res->free();
-    }
+    $totalTeachers = (int) $conn->query("SELECT COUNT(*) AS count FROM teachers")->fetch_assoc()['count'];
+    $totalStudents = (int) $conn->query("SELECT COUNT(*) AS count FROM students")->fetch_assoc()['count'];
+    $totalAssignments = (int) $conn->query("SELECT COUNT(*) AS count FROM assignments WHERE school_year = '" . $conn->real_escape_string($selectedYear) . "' AND semester = '" . $conn->real_escape_string($selectedSem) . "'")->fetch_assoc()['count'];
     $res = $conn->query(
         "SELECT a.module, a.school_year, a.semester, t.name AS teacher_name, s.section_code AS section_name " .
         "FROM assignments a " .
         "LEFT JOIN teachers t ON a.teacher_id = t.id " .
         "LEFT JOIN sections s ON a.section_id = s.id " .
+        "WHERE a.school_year = '" . $conn->real_escape_string($selectedYear) . "' AND a.semester = '" . $conn->real_escape_string($selectedSem) . "' " .
         "ORDER BY a.created_at DESC LIMIT 10"
     );
     if ($res) {
@@ -723,28 +713,33 @@ if ($conn) {
     <a href="login.php?logout=1" class="logout-btn"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
   </aside>
   <div class="main-content">
-    <div class="global-term-container">
-      <div class="filter-group">
-        <label for="global-filter-year">
-          <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
-          Academic Year:
-        </label>
-        <select id="global-filter-year" class="global-select">
-          <option value="2025-2026">2025–2026</option>
-          <option value="2024-2025">2024–2025</option>
-        </select>
-      </div>
+    <form method="get" action="" style="margin-bottom:0;">
+      <input type="hidden" name="global_year" id="hidden-global-year" value="<?php echo htmlspecialchars($selectedYear); ?>">
+      <input type="hidden" name="global_sem" id="hidden-global-sem" value="<?php echo htmlspecialchars($selectedSem); ?>">
+      <div class="global-term-container">
+        <div class="filter-group">
+          <label for="global-filter-year">
+            <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
+            Academic Year:
+          </label>
+          <select id="global-filter-year" class="global-select" onchange="syncGlobalFilter()">
+            <option value="2025-2026" <?php echo $selectedYear==='2025-2026'?'selected':''; ?>>2025–2026</option>
+            <option value="2026-2027" <?php echo $selectedYear==='2026-2027'?'selected':''; ?>>2026–2027</option>
+          </select>
+        </div>
 
-      <div class="filter-group">
-        <label for="global-filter-sem">
-          <i class="fa-solid fa-clock" aria-hidden="true"></i> Semester:
-        </label>
-        <select id="global-filter-sem" class="global-select">
-          <option value="1st Semester">1st Semester</option>
-          <option value="2nd Semester">2nd Semester</option>
-        </select>
+        <div class="filter-group">
+          <label for="global-filter-sem">
+            <i class="fa-solid fa-clock" aria-hidden="true"></i> Semester:
+          </label>
+          <select id="global-filter-sem" class="global-select" onchange="syncGlobalFilter()">
+            <option value="1st Semester" <?php echo $selectedSem==='1st Semester'?'selected':''; ?>>1st Semester</option>
+            <option value="2nd Semester" <?php echo $selectedSem==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
+            <option value="Summer" <?php echo $selectedSem==='Summer'?'selected':''; ?>>Summer</option>
+          </select>
+        </div>
       </div>
-    </div>
+    </form>
 
     <div class="tab-content" style="display: block;">
       <h1 class="view-title">Dashboard Overview</h1>
@@ -824,45 +819,66 @@ if (count($recentAssignments)) {
     </div>
   </div>
   <script>
-    document.addEventListener('DOMContentLoaded', function () {
-      const searchInput = document.querySelector('.table-search-input');
-      const tableBody = document.getElementById('dashboard-recent-table-body');
-      const totalAssignments = document.getElementById('dash-total-assignments');
-      const totalTeachers = document.getElementById('dash-total-teachers');
-      const totalStudents = document.getElementById('dash-total-students');
+  function syncGlobalFilter() {
+    const year = document.getElementById('global-filter-year').value;
+    const sem  = document.getElementById('global-filter-sem').value;
+    const url  = new URL(window.location);
+    url.searchParams.set('global_year', year);
+    url.searchParams.set('global_sem', sem);
+    url.searchParams.delete('school_year');
+    url.searchParams.delete('semester');
+    url.searchParams.delete('academic_year');
+    window.location.href = url.toString();
+  }
 
-      function renderEmptyRow() {
-        tableBody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#666;">No recent assignments available.</td></tr>';
+  document.addEventListener('DOMContentLoaded', function () {
+    const searchInput = document.querySelector('.table-search-input');
+    const tableBody   = document.getElementById('dashboard-recent-table-body');
+
+    // Cache PHP-rendered rows; detect whether real data rows exist
+    const originalRows = Array.from(tableBody.querySelectorAll('tr'));
+    const hasData = originalRows.length > 0 && !originalRows[0].querySelector('td[colspan]');
+
+    function renderNoResults() {
+      tableBody.innerHTML =
+        '<tr><td colspan="4" style="text-align:center;color:#666;padding:18px;">' +
+        'No matching assignments found.</td></tr>';
+    }
+
+    function restoreRows() {
+      tableBody.innerHTML = '';
+      originalRows.forEach(function (row) {
+        row.style.display = '';
+        tableBody.appendChild(row);
+      });
+    }
+
+    function filterAssignments() {
+      if (!hasData) return;
+
+      const query = searchInput.value.toLowerCase().trim();
+
+      if (!query) {
+        restoreRows();
+        return;
       }
 
-      function updateDashboardMetrics() {
-        const rows = tableBody.querySelectorAll('tr');
-        const assignmentsCount = rows.length === 1 && rows[0].querySelector('td[colspan]') ? 0 : rows.length;
-        totalAssignments.textContent = assignmentsCount;
-      }
-
-      function filterAssignments() {
-        const query = searchInput.value.toLowerCase().trim();
-        const rows = tableBody.querySelectorAll('tr');
-        let visibleCount = 0;
-
-        rows.forEach(row => {
-          const match = row.textContent.toLowerCase().includes(query);
-          row.style.display = match ? '' : 'none';
-          if (match) visibleCount++;
-        });
-
-        if (visibleCount === 0) {
-          renderEmptyRow();
+      let matches = 0;
+      tableBody.innerHTML = '';
+      originalRows.forEach(function (row) {
+        if (row.textContent.toLowerCase().includes(query)) {
+          tableBody.appendChild(row);
+          matches++;
         }
-      }
+      });
 
-      renderEmptyRow();
-      updateDashboardMetrics();
-      if (searchInput) {
-        searchInput.addEventListener('input', filterAssignments);
-      }
-    });
-  </script>
+      if (matches === 0) renderNoResults();
+    }
+
+    if (searchInput) {
+      searchInput.addEventListener('input', filterAssignments);
+    }
+  });
+</script>
 </body>
 </html>
