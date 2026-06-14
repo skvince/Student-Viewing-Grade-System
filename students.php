@@ -2,96 +2,111 @@
 <?php
 ob_start();
 session_start();
-$studentSaveError = '';
-    $submittedFirstName = '';
-    $submittedMiddleName = '';
-    $submittedLastName = '';
-    $submittedSectionId = 0;
-    $submittedDepartment = '';
-    $sections = [];
-    $departments = [];
+$selectedYear = $_GET['school_year'] ?? null;
+$selectedSem = $_GET['semester'] ?? null;
 
-    $conn = db_connect();
-    if ($conn) {
-        $res = $conn->query("SELECT id, name FROM departments ORDER BY name ASC");
-        if ($res) {
-            while ($row = $res->fetch_assoc()) $departments[] = $row;
-            $res->free();
-        }
-        $conn->close();
+$studentSaveError = '';
+$submittedFirstName = '';
+$submittedMiddleName = '';
+$submittedLastName = '';
+$submittedSectionId = 0;
+$submittedDepartment = '';
+$sections = [];
+$departments = [];
+
+$conn = db_connect();
+if ($conn) {
+    $res = $conn->query("SELECT id, name FROM departments ORDER BY name ASC");
+    if ($res) {
+        while ($row = $res->fetch_assoc()) $departments[] = $row;
+        $res->free();
     }
 
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_student'])) {
-      $studentIdToDelete = intval($_POST['student_id'] ?? 0);
-      if ($studentIdToDelete) {
+    // Auto-detect year/sem from sections if not set
+    if (!$selectedYear) {
+        $res = $conn->query("SELECT school_year, semester FROM sections WHERE school_year IS NOT NULL AND semester IS NOT NULL ORDER BY created_at DESC LIMIT 1");
+        if ($res && $row = $res->fetch_assoc()) {
+            $selectedYear = $row['school_year'];
+            $selectedSem = $row['semester'];
+        }
+        if ($res) $res->free();
+    }
+    $conn->close();
+}
+if (!$selectedYear) $selectedYear = '2025-2026';
+if (!$selectedSem) $selectedSem = '1st Semester';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_student'])) {
+    $studentIdToDelete = intval($_POST['student_id'] ?? 0);
+    if ($studentIdToDelete) {
         delete_student($studentIdToDelete);
         audit_log('delete_student');
-      }
-      header('Location: ' . $_SERVER['PHP_SELF']);
-      exit;
     }
+    header('Location: ' . $_SERVER['PHP_SELF']);
+    exit;
+}
 
-    // Handle update student form submission
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
-      $studentId = intval($_POST['student_id'] ?? 0);
-      $firstName = trim($_POST['first_name'] ?? '');
-      $middleName = trim($_POST['middle_name'] ?? '');
-      $lastName = trim($_POST['last_name'] ?? '');
-      $submittedSectionId = intval($_POST['section_id'] ?? 0);
-      $submittedDepartment = trim($_POST['department'] ?? '');
+// Handle update student form submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
+    $studentId = intval($_POST['student_id'] ?? 0);
+    $firstName = trim($_POST['first_name'] ?? '');
+    $middleName = trim($_POST['middle_name'] ?? '');
+    $lastName = trim($_POST['last_name'] ?? '');
+    $submittedSectionId = intval($_POST['section_id'] ?? 0);
+    $submittedDepartment = trim($_POST['department'] ?? '');
 
-      if (!$studentId || !$firstName || !$lastName) {
+    if (!$studentId || !$firstName || !$lastName) {
         $studentSaveError = 'First name and last name are required.';
-      } else {
+    } else {
         $ok = update_student($studentId, $firstName, $middleName, $lastName, $submittedSectionId ?: null, $submittedDepartment ?: null, null);
         if ($ok) {
-          audit_log('update_student');
-          header('Location: ' . $_SERVER['PHP_SELF']);
-          exit;
+            audit_log('update_student');
+            header('Location: ' . $_SERVER['PHP_SELF']);
+            exit;
         } else {
-          $studentSaveError = 'Student update failed.';
+            $studentSaveError = 'Student update failed.';
         }
-      }
     }
+}
 
-    // Handle add student form submission
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_student'])) {
-      $firstName = trim($_POST['first_name'] ?? '');
-      $middleName = trim($_POST['middle_name'] ?? '');
-      $lastName = trim($_POST['last_name'] ?? '');
-      $submittedSectionId = intval($_POST['section_id'] ?? 0);
-      $submittedDepartment = trim($_POST['department'] ?? '');
-      $submittedFirstName = $firstName;
-      $submittedMiddleName = $middleName;
-      $submittedLastName = $lastName;
+// Handle add student form submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_student'])) {
+    $firstName = trim($_POST['first_name'] ?? '');
+    $middleName = trim($_POST['middle_name'] ?? '');
+    $lastName = trim($_POST['last_name'] ?? '');
+    $submittedSectionId = intval($_POST['section_id'] ?? 0);
+    $submittedDepartment = trim($_POST['department'] ?? '');
+    $submittedFirstName = $firstName;
+    $submittedMiddleName = $middleName;
+    $submittedLastName = $lastName;
 
-      if (! $firstName || ! $lastName) {
+    if (! $firstName || ! $lastName) {
         $studentSaveError = 'First name and last name are required.';
-      } else {
+    } else {
         $result = create_student($firstName, $middleName, $lastName, $submittedSectionId ?: null, $submittedDepartment ?: null);
         if ($result['success']) {
             audit_log('create_student');
             $studentSaveError = 'Student registered successfully! ID: ' . $result['student_id'] . ' | Password: ' . $result['password'];
         } else {
-          $studentSaveError = $result['error'];
+            $studentSaveError = $result['error'];
         }
-      }
     }
+}
 
-    $conn = db_connect();
-    if ($conn) {
-      $sectionRes = $conn->query("SELECT id, section_code, name FROM sections ORDER BY name ASC");
-      if ($sectionRes) {
+$conn = db_connect();
+if ($conn) {
+    $sectionRes = $conn->query("SELECT id, section_code, name, school_year, semester FROM sections ORDER BY name ASC");
+    if ($sectionRes) {
         while ($row = $sectionRes->fetch_assoc()) {
-          $sections[] = $row;
+            $sections[] = $row;
         }
         $sectionRes->free();
-      }
-      $conn->close();
     }
-    ?>
-    <!doctype html>
-    <html lang="en">
+$conn->close();
+}
+?>
+<!doctype html>
+<html lang="en">
 
     <head>
       <meta charset="UTF-8" />
@@ -903,8 +918,8 @@ $studentSaveError = '';
               Academic Year:
             </label>
             <select id="global-filter-year" class="global-select">
-              <option value="2025-2026">2025–2026</option>
-              <option value="2024-2025">2024–2025</option>
+              <option value="2025-2026" <?= $selectedYear === '2025-2026' ? 'selected' : '' ?>>2025–2026</option>
+              <option value="2024-2025" <?= $selectedYear === '2024-2025' ? 'selected' : '' ?>>2024–2025</option>
             </select>
           </div>
 
@@ -913,8 +928,8 @@ $studentSaveError = '';
               <i class="fa-solid fa-clock" aria-hidden="true"></i> Semester:
             </label>
             <select id="global-filter-sem" class="global-select">
-              <option value="1st Semester">1st Semester</option>
-              <option value="2nd Semester">2nd Semester</option>
+              <option value="1st Semester" <?= $selectedSem === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
+              <option value="2nd Semester" <?= $selectedSem === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
             </select>
           </div>
         </div>
@@ -1031,6 +1046,8 @@ $studentSaveError = '';
                     "SELECT s.id, s.student_id, s.first_name, s.middle_name, s.last_name, s.section_id, s.department, sec.name AS section_name, sec.section_code " .
                     "FROM students s " .
                     "LEFT JOIN sections sec ON s.section_id = sec.id " .
+                    "WHERE sec.school_year = '" . $conn->real_escape_string($selectedYear) . "' " .
+                    "AND sec.semester = '" . $conn->real_escape_string($selectedSem) . "' " .
                     "ORDER BY s.last_name ASC, s.first_name ASC"
                 );
                 if ($res) {
@@ -1068,65 +1085,87 @@ $studentSaveError = '';
           </div>
         </div>
       </div>
-      <script>
-        function editStudent(id, firstName, middleName, lastName, department, sectionId) {
-          document.getElementById('student-id-field').value = id;
-          document.getElementById('first_name').value = firstName;
-          document.getElementById('middle_name').value = middleName;
-          document.getElementById('last_name').value = lastName;
-          document.getElementById('department').value = department || '';
-          document.getElementById('section_id').value = sectionId || '';
-          document.getElementById('form-title').textContent = 'Edit Student';
-          document.getElementById('form-subtitle').textContent = 'Update the student details below.';
-          document.getElementById('submit-btn').name = 'update_student';
-          document.getElementById('submit-btn').textContent = 'Update Student';
-          document.getElementById('modal-backdrop').style.display = 'flex';
-          document.getElementById('btn-add-student').style.display = 'none';
-        }
+<script>
+          // Variables
+          const globalYearSelect = document.getElementById('global-filter-year');
+          const globalSemSelect = document.getElementById('global-filter-sem');
 
-        function resetForm() {
-          document.getElementById('student-id-field').value = '';
-          document.getElementById('student-form').reset();
-          document.getElementById('form-title').textContent = 'Add Student';
-          document.getElementById('form-subtitle').textContent = 'Enter the student details below.';
-          document.getElementById('submit-btn').name = 'add_student';
-          document.getElementById('submit-btn').textContent = 'Register';
-        }
-
-        function togglePassword(id) {
-          const dots = document.getElementById('pwd-dots-' + id);
-          const text = document.getElementById('pwd-text-' + id);
-          const eye = document.getElementById('pwd-eye-' + id);
-          if (dots.style.display === 'none') {
-            dots.style.display = '';
-            text.style.display = 'none';
-            eye.className = 'fa-solid fa-eye';
-          } else {
-            dots.style.display = 'none';
-            text.style.display = '';
-            eye.className = 'fa-solid fa-eye-slash';
+          // Handlers
+          function handleYearChange() {
+            const url = new URL(window.location);
+            url.searchParams.set('school_year', this.value);
+            window.location = url;
           }
-        }
 
-        function deleteStudent(id) {
-          const form = document.createElement('form');
-          form.method = 'POST';
-          form.innerHTML = '<input type="hidden" name="delete_student" value="1"><input type="hidden" name="student_id" value="' + id + '">';
-          document.body.appendChild(form);
-          form.submit();
-        }
+          function handleSemChange() {
+            const url = new URL(window.location);
+            url.searchParams.set('semester', this.value);
+            window.location = url;
+          }
 
-        document.querySelectorAll('.table-search-input').forEach(input => {
-          input.addEventListener('input', function() {
+          function editStudent(id, firstName, middleName, lastName, department, sectionId) {
+            document.getElementById('student-id-field').value = id;
+            document.getElementById('first_name').value = firstName;
+            document.getElementById('middle_name').value = middleName;
+            document.getElementById('last_name').value = lastName;
+            document.getElementById('department').value = department || '';
+            document.getElementById('section_id').value = sectionId || '';
+            document.getElementById('form-title').textContent = 'Edit Student';
+            document.getElementById('form-subtitle').textContent = 'Update the student details below.';
+            document.getElementById('submit-btn').name = 'update_student';
+            document.getElementById('submit-btn').textContent = 'Update Student';
+            document.getElementById('modal-backdrop').style.display = 'flex';
+            document.getElementById('btn-add-student').style.display = 'none';
+          }
+
+          function resetForm() {
+            document.getElementById('student-id-field').value = '';
+            document.getElementById('student-form').reset();
+            document.getElementById('form-title').textContent = 'Add Student';
+            document.getElementById('form-subtitle').textContent = 'Enter the student details below.';
+            document.getElementById('submit-btn').name = 'add_student';
+            document.getElementById('submit-btn').textContent = 'Register';
+          }
+
+          function togglePassword(id) {
+            const dots = document.getElementById('pwd-dots-' + id);
+            const text = document.getElementById('pwd-text-' + id);
+            const eye = document.getElementById('pwd-eye-' + id);
+            if (dots.style.display === 'none') {
+              dots.style.display = '';
+              text.style.display = 'none';
+              eye.className = 'fa-solid fa-eye';
+            } else {
+              dots.style.display = 'none';
+              text.style.display = '';
+              eye.className = 'fa-solid fa-eye-slash';
+            }
+          }
+
+          function deleteStudent(id) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.innerHTML = '<input type="hidden" name="delete_student" value="1"><input type="hidden" name="student_id" value="' + id + '">';
+            document.body.appendChild(form);
+            form.submit();
+          }
+
+          function filterStudents() {
             const query = this.value.toLowerCase();
             document.querySelectorAll('#students-table tbody tr').forEach(row => {
               row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
             });
-          });
-        });
+          }
 
-        // Reset form when closing modal
-        document.getElementById('btn-add-student').addEventListener('click', resetForm);
-      </script>
+          // Listeners
+          document.addEventListener('DOMContentLoaded', function () {
+            globalYearSelect?.addEventListener('change', handleYearChange);
+            globalSemSelect?.addEventListener('change', handleSemChange);
+            document.querySelectorAll('.table-search-input').forEach(input => {
+              input.addEventListener('input', filterStudents);
+            });
+            document.getElementById('btn-add-student').addEventListener('click', resetForm);
+          });
+        </script>
     </body>
     </html>

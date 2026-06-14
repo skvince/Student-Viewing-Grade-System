@@ -1,6 +1,9 @@
 <?php require_once __DIR__ . '/inc/functions.php'; ?>
 <?php
 session_start();
+$selectedYear = $_GET['school_year'] ?? null;
+$selectedSem = $_GET['semester'] ?? null;
+
 $teacherSaveError = '';
 $editingTeacherId = 0;
 $editingTeacherData = [];
@@ -13,8 +16,19 @@ if ($conn) {
         while ($row = $res->fetch_assoc()) $departments[] = $row;
         $res->free();
     }
+    // Auto-detect year/sem from assignments if not set
+    if (!$selectedYear) {
+        $res = $conn->query("SELECT school_year, semester FROM assignments WHERE school_year IS NOT NULL AND semester IS NOT NULL ORDER BY created_at DESC LIMIT 1");
+        if ($res && $row = $res->fetch_assoc()) {
+            $selectedYear = $row['school_year'];
+            $selectedSem = $row['semester'];
+        }
+        if ($res) $res->free();
+    }
     $conn->close();
 }
+if (!$selectedYear) $selectedYear = '2025-2026';
+if (!$selectedSem) $selectedSem = '1st Semester';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_teacher'])) {
     $teacherId = intval($_POST['teacher_id'] ?? 0);
@@ -858,8 +872,8 @@ if (isset($_GET['edit_teacher'])) {
           Academic Year:
         </label>
         <select id="global-filter-year" class="global-select">
-          <option value="2025-2026">2025–2026</option>
-          <option value="2024-2025">2024–2025</option>
+          <option value="2025-2026" <?= $selectedYear === '2025-2026' ? 'selected' : '' ?>>2025–2026</option>
+          <option value="2024-2025" <?= $selectedYear === '2024-2025' ? 'selected' : '' ?>>2024–2025</option>
         </select>
       </div>
 
@@ -868,8 +882,8 @@ if (isset($_GET['edit_teacher'])) {
           <i class="fa-solid fa-clock" aria-hidden="true"></i> Semester:
         </label>
         <select id="global-filter-sem" class="global-select">
-          <option value="1st Semester">1st Semester</option>
-          <option value="2nd Semester">2nd Semester</option>
+          <option value="1st Semester" <?= $selectedSem === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
+          <option value="2nd Semester" <?= $selectedSem === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
         </select>
       </div>
     </div>
@@ -1004,46 +1018,56 @@ if (isset($_GET['edit_teacher'])) {
         </div>
     </div>
   </div>
-  <script>
-    function openTeacherModal() {
-      document.getElementById('teacher-modal').style.display = 'flex';
-      document.getElementById('btn-add-teacher').style.display = 'none';
-    }
-    function closeTeacherModal() {
-      document.getElementById('teacher-modal').style.display = 'none';
-      document.getElementById('btn-add-teacher').style.display = 'inline-flex';
-      document.getElementById('teacher-form').reset();
-      document.getElementById('teacher-id-field').value = '';
-      document.getElementById('modal-title').textContent = 'Add Teacher';
-      const submitBtn = document.querySelector('#teacher-form button[type="submit"]');
-      submitBtn.name = 'add_teacher';
-      submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Teacher';
-    }
-    function togglePassword(id) {
-      const dots = document.getElementById('pwd-dots-' + id);
-      const text = document.getElementById('pwd-text-' + id);
-      const eye = document.getElementById('pwd-eye-' + id);
-      if (dots.style.display === 'none') {
-        dots.style.display = '';
-        text.style.display = 'none';
-        eye.className = 'fa-solid fa-eye';
-      } else {
-        dots.style.display = 'none';
-        text.style.display = '';
-        eye.className = 'fa-solid fa-eye-slash';
-      }
-    }
-    function filterTeachers(query) {
-      query = query.toLowerCase();
-      document.querySelectorAll('#teachers-table tbody tr').forEach(row => {
-        row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
-      });
-    }
-    document.querySelectorAll('.table-search-input').forEach(input => {
-      input.addEventListener('input', function() {
-        filterTeachers(this.value);
-      });
-    });
-  </script>
+<script>
+     // Variables
+     const globalYearSelect = document.getElementById('global-filter-year');
+     const globalSemSelect = document.getElementById('global-filter-sem');
+
+     // Handlers
+     function handleYearChange() {
+       const url = new URL(window.location);
+       url.searchParams.set('school_year', this.value);
+       window.location = url;
+     }
+
+     function handleSemChange() {
+       const url = new URL(window.location);
+       url.searchParams.set('semester', this.value);
+       window.location = url;
+     }
+
+     function togglePassword(id) {
+       const dots = document.getElementById('pwd-dots-' + id);
+       const text = document.getElementById('pwd-text-' + id);
+       const eye = document.getElementById('pwd-eye-' + id);
+       if (dots.style.display === 'none') {
+         dots.style.display = '';
+         text.style.display = 'none';
+         eye.className = 'fa-solid fa-eye';
+       } else {
+         dots.style.display = 'none';
+         text.style.display = '';
+         eye.className = 'fa-solid fa-eye-slash';
+       }
+     }
+
+     function filterTeachers(query) {
+       query = query.toLowerCase();
+       document.querySelectorAll('#teachers-table tbody tr').forEach(row => {
+         row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
+       });
+     }
+
+     // Listeners
+     document.addEventListener('DOMContentLoaded', function () {
+       globalYearSelect?.addEventListener('change', handleYearChange);
+       globalSemSelect?.addEventListener('change', handleSemChange);
+       document.querySelectorAll('.table-search-input').forEach(input => {
+         input.addEventListener('input', function() {
+           filterTeachers(this.value);
+         });
+       });
+     });
+   </script>
 </body>
 </html>

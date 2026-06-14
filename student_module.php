@@ -31,18 +31,19 @@ if ($conn) {
 
 $filterYear = $_GET['academic_year'] ?? '';
 $filterSem = $_GET['semester'] ?? '';
-$grades = get_student_grades($userId, $filterYear, $filterSem);
-$assignedSubjects = get_student_assigned_subjects($userId, $filterYear, $filterSem);
 
 $terms = get_available_terms($userId, 'student');
 $yearOptions = $terms['years'] ?? [];
 $semOptions = $terms['semesters'] ?? [];
 
-if (empty($yearOptions)) $yearOptions = ['2025-2026','2024-2025','2026-2027'];
-if (empty($semOptions)) $semOptions = ['1st Semester','2nd Semester'];
-
+// Auto-detect current year/sem if not provided
 if (!$filterYear && !empty($yearOptions)) $filterYear = $yearOptions[0];
+elseif (!$filterYear) $filterYear = '2025-2026';
 if (!$filterSem && !empty($semOptions)) $filterSem = $semOptions[0];
+elseif (!$filterSem) $filterSem = '1st Semester';
+
+$grades = get_student_grades($userId, $filterYear, $filterSem);
+$assignedSubjects = get_student_assigned_subjects($userId, $filterYear, $filterSem);
 
 $displayRows = [];
 foreach ($assignedSubjects as $subj) {
@@ -149,16 +150,16 @@ $totalAvg = $totalUnits > 0 ? $totalWeightedAvg / $totalUnits : 0;
   </header>
 
   <main>
-    <form action="#" method="GET" class="filter-card">
+    <form action="#" method="GET" class="filter-card" id="term-filter-form">
       <fieldset style="border:none;">
         <legend>Select Year & Semester</legend>
         <div class="filter-group-selectors">
-          <select name="academic_year" class="form-control" onchange="this.form.submit()">
+          <select name="academic_year" id="filter-year" class="form-control">
             <?php foreach ($yearOptions as $y): ?>
               <option value="<?php echo htmlspecialchars($y); ?>" <?php echo $filterYear===$y?'selected':''; ?>><?php echo htmlspecialchars($y); ?></option>
             <?php endforeach; ?>
           </select>
-          <select name="semester" class="form-control" onchange="this.form.submit()">
+          <select name="semester" id="filter-semester" class="form-control">
             <?php foreach ($semOptions as $s): ?>
               <option value="<?php echo htmlspecialchars($s); ?>" <?php echo $filterSem===$s?'selected':''; ?>><?php echo htmlspecialchars($s); ?></option>
             <?php endforeach; ?>
@@ -236,8 +237,24 @@ $totalAvg = $totalUnits > 0 ? $totalWeightedAvg / $totalUnits : 0;
           <data value="0" id="summary-total-avg"><?php echo number_format($totalAvg, 2); ?>%</data>
         </div>
       </footer>
-    </section>
-  </main>
+</section>
+   </main>
+
+<script>
+// Variables
+const filterYear = document.getElementById('filter-year');
+const filterSemester = document.getElementById('filter-semester');
+
+// Handlers
+function applyFilters() {
+    const form = document.getElementById('term-filter-form');
+    form.submit();
+}
+
+// Listeners
+filterYear?.addEventListener('change', applyFilters);
+filterSemester?.addEventListener('change', applyFilters);
+</script>
 
 </body>
 </html>

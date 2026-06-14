@@ -338,21 +338,37 @@ function get_student_assigned_subjects(int $studentId, string $schoolYear = '', 
 function get_available_terms(int $userId, string $role): array {
     $conn = db_connect();
     if (!$conn) return ['years' => [], 'semesters' => []];
+    $years = [];
+    $semesters = [];
+
     if ($role === 'teacher') {
-        $stmt = $conn->prepare("SELECT DISTINCT school_year, semester FROM assignments WHERE teacher_id = ? ORDER BY school_year DESC");
-        $stmt->bind_param('i', $userId);
+        $stmt = $conn->prepare("SELECT DISTINCT school_year, semester FROM assignments WHERE teacher_id = ? UNION SELECT DISTINCT school_year, semester FROM grades WHERE teacher_id = ? ORDER BY school_year DESC");
+        $stmt->bind_param('ii', $userId, $userId);
     } else {
-        $stmt = $conn->prepare("SELECT DISTINCT g.school_year, g.semester FROM grades g WHERE g.student_id = ? ORDER BY g.school_year DESC");
-        $stmt->bind_param('i', $userId);
+        // For students: get terms from both grades and assignments
+        $stmt = $conn->prepare("
+            SELECT DISTINCT g.school_year, g.semester FROM grades g WHERE g.student_id = ?
+            UNION
+            SELECT DISTINCT a.school_year, a.semester FROM assignments a WHERE a.section_id IN (SELECT section_id FROM students WHERE id = ?)
+            ORDER BY school_year DESC
+        ");
+        $stmt->bind_param('ii', $userId, $userId);
     }
     $stmt->execute();
     $res = $stmt->get_result();
-    $years = [];
-    $semesters = [];
     while ($r = $res->fetch_assoc()) {
-        if (!in_array($r['school_year'], $years, true)) $years[] = $r['school_year'];
-        if (!in_array($r['semester'], $semesters, true)) $semesters[] = $r['semester'];
+        if (!empty($r['school_year']) && !in_array($r['school_year'], $years, true)) $years[] = $r['school_year'];
+        if (!empty($r['semester']) && !in_array($r['semester'], $semesters, true)) $semesters[] = $r['semester'];
     }
+    // Order semesters: 1st Semester first, then 2nd Semester
+    $semesterOrder = ['1st Semester', '2nd Semester'];
+    usort($semesters, function($a, $b) use ($semesterOrder) {
+        $posA = array_search($a, $semesterOrder);
+        $posB = array_search($b, $semesterOrder);
+        $posA = $posA === false ? 999 : $posA;
+        $posB = $posB === false ? 999 : $posB;
+        return $posA <=> $posB;
+    });
     $stmt->close();
     $conn->close();
     return ['years' => $years, 'semesters' => $semesters];

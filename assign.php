@@ -7,6 +7,9 @@ if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
     exit;
 }
 
+$selectedYear = $_GET['school_year'] ?? null;
+$selectedSem = $_GET['semester'] ?? null;
+
 $teachers     = [];
 $sections     = [];
 $subjects     = [];
@@ -273,10 +276,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_assignment']))
 }
 
 /* ═══════════════════════════════════════════════════════════
-   FETCH DATA FOR PAGE RENDER
-   ═══════════════════════════════════════════════════════════ */
+    FETCH DATA FOR PAGE RENDER
+    ═══════════════════════════════════════════════════════════ */
 $conn = db_connect();
 if ($conn) {
+    // Auto-detect year/sem if not set
+    if (!$selectedYear) {
+        $res = $conn->query("SELECT school_year, semester FROM subjects WHERE school_year IS NOT NULL AND semester IS NOT NULL ORDER BY id DESC LIMIT 1");
+        if ($res && $row = $res->fetch_assoc()) {
+            $selectedYear = $row['school_year'];
+            $selectedSem = $row['semester'];
+        }
+        if ($res) $res->free();
+    }
+    if (!$selectedYear) $selectedYear = '2025-2026';
+    if (!$selectedSem) $selectedSem = '1st Semester';
 
     // Teachers
     $res = $conn->query("SELECT id, teacher_id, name FROM teachers ORDER BY name ASC");
@@ -285,8 +299,8 @@ if ($conn) {
         $res->free();
     }
 
-    // Sections
-    $res = $conn->query("SELECT id, section_code, name FROM sections ORDER BY created_at DESC");
+// Sections
+    $res = $conn->query("SELECT id, section_code, name, school_year, semester FROM sections ORDER BY created_at DESC");
     if ($res) {
         while ($row = $res->fetch_assoc()) $sections[] = $row;
         $res->free();
@@ -294,7 +308,10 @@ if ($conn) {
 
     // Subjects — loaded from DB, not from JS DOM
     $res = $conn->query(
-        "SELECT id, subject_code, title, units, school_year, semester FROM subjects ORDER BY subject_code ASC"
+        "SELECT id, subject_code, title, units, school_year, semester FROM subjects " .
+        "WHERE school_year = '" . $conn->real_escape_string($selectedYear) . "' " .
+        "AND semester = '" . $conn->real_escape_string($selectedSem) . "' " .
+        "ORDER BY subject_code ASC"
     );
     if ($res) {
         while ($row = $res->fetch_assoc()) $subjects[] = $row;
@@ -316,7 +333,9 @@ if ($conn) {
          LEFT JOIN teachers  t  ON a.teacher_id  = t.id
          LEFT JOIN sections  s  ON a.section_id  = s.id
          LEFT JOIN subjects  sj ON a.subject_id  = sj.id
-         ORDER BY a.created_at DESC"
+         WHERE a.school_year = '" . $conn->real_escape_string($selectedYear) . "' " .
+         "AND a.semester = '" . $conn->real_escape_string($selectedSem) . "' " .
+         "ORDER BY a.created_at DESC"
     );
     if ($res) {
         while ($row = $res->fetch_assoc()) $assignments[] = $row;
@@ -385,11 +404,60 @@ $assignedSubjectIds = array_unique(
 
     /* Main */
     .main-content { padding: 40px; min-width: 0; }
-    .global-term-container { display: flex; align-items: center; gap: 24px; background-color: #0c3e21; padding: 16px 24px; border-radius: 12px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,.1); flex-wrap: wrap; }
-    .filter-group { display: flex; align-items: center; gap: 12px; }
-    .global-term-container label { color: #fff; font-size: .9rem; font-weight: 700; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
-    .global-select { padding: 8px 14px; border-radius: 6px; border: 1px solid transparent; font-size: .875rem; background-color: #fff; color: #1f2937; font-weight: 500; cursor: pointer; outline: none; min-width: 140px; transition: border-color .2s, box-shadow .2s; }
-    .global-select:focus { border-color: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.2); }
+
+    /* --- SCREENSHOT-MATCHED GLOBAL TERM CONTAINER --- */
+    .global-term-container {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      background-color: #0c3e21;
+      padding: 16px 24px;
+      border-radius: 12px;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      flex-wrap: wrap;
+    }
+
+    .filter-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .global-term-container label {
+      color: #ffffff;
+      font-size: 0.9rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .global-term-container label i {
+      font-size: 1rem;
+    }
+
+    .global-select {
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      font-size: 0.875rem;
+      background-color: #ffffff;
+      color: #1f2937;
+      font-weight: 500;
+      cursor: pointer;
+      outline: none;
+      min-width: 140px;
+      transition:
+        border-color 0.2s,
+        box-shadow 0.2s;
+    }
+
+    .global-select:focus {
+      border-color: #22c55e;
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
+    }
 
     /* Typography */
     .view-title { font-size: 1.25rem; color: var(--primary-green); font-weight: 600; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .5px; }
@@ -483,20 +551,26 @@ $assignedSubjectIds = array_unique(
 
   <div class="main-content">
 
-    <!-- Global term filter bar -->
+<!-- Global term filter bar -->
     <div class="global-term-container">
       <div class="filter-group">
-        <label for="global-filter-year"><i class="fa-solid fa-calendar-days"></i> Academic Year:</label>
+        <label for="global-filter-year">
+          <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
+          Academic Year:
+        </label>
         <select id="global-filter-year" class="global-select">
-          <option value="2025-2026">2025–2026</option>
-          <option value="2024-2025">2024–2025</option>
+          <option value="2025-2026" <?= $selectedYear === '2025-2026' ? 'selected' : '' ?>>2025–2026</option>
+          <option value="2024-2025" <?= $selectedYear === '2024-2025' ? 'selected' : '' ?>>2024–2025</option>
         </select>
       </div>
       <div class="filter-group">
-        <label for="global-filter-sem"><i class="fa-solid fa-clock"></i> Semester:</label>
+        <label for="global-filter-sem">
+          <i class="fa-solid fa-clock" aria-hidden="true"></i>
+          Semester:
+        </label>
         <select id="global-filter-sem" class="global-select">
-          <option value="1st Semester">1st Semester</option>
-          <option value="2nd Semester">2nd Semester</option>
+          <option value="1st Semester" <?= $selectedSem === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
+          <option value="2nd Semester" <?= $selectedSem === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
         </select>
       </div>
     </div>
@@ -575,12 +649,6 @@ $assignedSubjectIds = array_unique(
 
       <!-- Subject table -->
       <div style="margin-top:20px;">
-        <div class="search-bar-wrap">
-          <div class="search-bar-inner">
-            <i class="fa-solid fa-magnifying-glass"></i>
-            <input type="text" class="table-search-input" placeholder="Search subjects..." />
-          </div>
-        </div>
       <div class="table-responsive">
         <div class="search-bar-wrap">
           <div class="search-bar-inner">
@@ -692,7 +760,7 @@ $assignedSubjectIds = array_unique(
                 <option value="" disabled selected hidden>Select section...</option>
                 <?php foreach ($sections as $sec): ?>
                   <option value="<?= intval($sec['id']) ?>">
-                    <?= htmlspecialchars($sec['section_code']) ?>
+                    <?= htmlspecialchars($sec['section_code'] . ' - ' . ($sec['name'] ?? '')) ?>
                   </option>
                 <?php endforeach; ?>
               </select>
@@ -825,7 +893,7 @@ $assignedSubjectIds = array_unique(
                 <option value="" disabled selected hidden>Select section...</option>
                 <?php foreach ($sections as $sec): ?>
                   <option value="<?= intval($sec['id']) ?>">
-                    <?= htmlspecialchars($sec['section_code']) ?>
+                    <?= htmlspecialchars($sec['section_code'] . ' - ' . ($sec['name'] ?? '')) ?>
                   </option>
                 <?php endforeach; ?>
               </select>
@@ -857,70 +925,97 @@ $assignedSubjectIds = array_unique(
 
   </div><!-- /.main-content -->
 
-  <script>
-  document.addEventListener('DOMContentLoaded', function () {
-    const modal = document.getElementById('edit-modal');
-    const btnClose = document.getElementById('btn-close-modal');
+<script>
+   // Variables
+   const globalYearSelect = document.getElementById('global-filter-year');
+   const globalSemSelect = document.getElementById('global-filter-sem');
+   const modal = document.getElementById('edit-modal');
+   const btnClose = document.getElementById('btn-close-modal');
+   const subjectIdField = document.getElementById('subject-edit-id');
+   const subCodeInput = document.getElementById('sub-code-input');
+   const subTitleInput = document.getElementById('sub-name-input');
+   const subYearSelect = document.getElementById('sub-year-select');
+   const subSemSelect = document.getElementById('sub-sem-select');
+   const btnCancelSubjectEdit = document.getElementById('btn-cancel-subject-edit');
 
-    document.querySelectorAll('.btn-edit-assignment').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        const data = btn.dataset;
-        document.getElementById('edit-assignment-id').value = data.id || '';
-        document.getElementById('edit-teacher').value = data.teacher || '';
-        document.getElementById('edit-subject').value = data.subject || '';
-        document.getElementById('edit-section').value = data.section || '';
-        document.getElementById('edit-school-year').value = data.year || '';
-        document.getElementById('edit-semester').value = data.semester || '';
-        modal.style.display = 'flex';
-      });
-    });
+   // Handlers
+   function handleYearChange() {
+     const url = new URL(window.location);
+     url.searchParams.set('school_year', this.value);
+     window.location = url;
+   }
 
-    function closeModal() { modal.style.display = 'none'; }
-    btnClose.addEventListener('click', closeModal);
-    modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
+   function handleSemChange() {
+     const url = new URL(window.location);
+     url.searchParams.set('semester', this.value);
+     window.location = url;
+   }
 
-    const subjectIdField = document.getElementById('subject-edit-id');
-    const subCodeInput = document.getElementById('sub-code-input');
-    const subTitleInput = document.getElementById('sub-name-input');
-    const subYearSelect = document.getElementById('sub-year-select');
-    const subSemSelect = document.getElementById('sub-sem-select');
-    const btnCancelSubjectEdit = document.getElementById('btn-cancel-subject-edit');
+   function openEditModal(btn) {
+     const data = btn.dataset;
+     document.getElementById('edit-assignment-id').value = data.id || '';
+     document.getElementById('edit-teacher').value = data.teacher || '';
+     document.getElementById('edit-subject').value = data.subject || '';
+     document.getElementById('edit-section').value = data.section || '';
+     document.getElementById('edit-school-year').value = data.year || '';
+     document.getElementById('edit-semester').value = data.semester || '';
+     modal.style.display = 'flex';
+   }
 
-    document.querySelectorAll('.btn-edit-subject').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        const data = btn.dataset;
-        subjectIdField.value = data.id || '';
-        subCodeInput.value = data.code || '';
-        subTitleInput.value = data.title || '';
-        subYearSelect.value = data.year || '';
-        subSemSelect.value = data.semester || '';
-        document.getElementById('sub-code-input').focus();
-        window.scrollTo({ top: document.getElementById('subject-block-container').offsetTop - 20, behavior: 'smooth' });
-      });
-    });
+   function closeModal() { modal.style.display = 'none'; }
 
-    function cancelSubjectEdit() {
-      subjectIdField.value = '';
-      subCodeInput.value = '';
-      subTitleInput.value = '';
-      subYearSelect.value = '';
-      subSemSelect.value = '';
-    }
-    if (btnCancelSubjectEdit) {
-      btnCancelSubjectEdit.addEventListener('click', cancelSubjectEdit);
-    }
+   function openSubjectEdit(btn) {
+     const data = btn.dataset;
+     subjectIdField.value = data.id || '';
+     subCodeInput.value = data.code || '';
+     subTitleInput.value = data.title || '';
+     subYearSelect.value = data.year || '';
+     subSemSelect.value = data.semester || '';
+     document.getElementById('sub-code-input').focus();
+     window.scrollTo({ top: document.getElementById('subject-block-container').offsetTop - 20, behavior: 'smooth' });
+   }
 
-    document.querySelectorAll('.table-search-input').forEach(function (input) {
-      input.addEventListener('input', function () {
-        const q = this.value.toLowerCase();
-        const panel = this.closest('.panel-block') || this.closest('[id$="-container"]');
-        if (!panel) return;
-        panel.querySelectorAll('tbody tr').forEach(function (row) {
-          row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
-        });
-      });
-    });
-  });
-  </script>
+   function cancelSubjectEdit() {
+     subjectIdField.value = '';
+     subCodeInput.value = '';
+     subTitleInput.value = '';
+     subYearSelect.value = '';
+     subSemSelect.value = '';
+   }
+
+   function filterTableRows() {
+     const q = this.value.toLowerCase();
+     const panel = this.closest('.panel-block') || this.closest('[id$="-container"]');
+     if (!panel) return;
+     panel.querySelectorAll('tbody tr').forEach(function (row) {
+       row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+     });
+   }
+
+   // Listeners
+   document.addEventListener('DOMContentLoaded', function () {
+     globalYearSelect?.addEventListener('change', handleYearChange);
+     globalSemSelect?.addEventListener('change', handleSemChange);
+
+     document.querySelectorAll('.btn-edit-assignment').forEach(function (btn) {
+       btn.addEventListener('click', function () { openEditModal(btn); });
+     });
+
+     btnClose.addEventListener('click', closeModal);
+     modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
+
+     document.querySelectorAll('.btn-edit-subject').forEach(function (btn) {
+       btn.addEventListener('click', function () { openSubjectEdit(btn); });
+     });
+
+     if (btnCancelSubjectEdit) {
+       btnCancelSubjectEdit.addEventListener('click', cancelSubjectEdit);
+     }
+
+     document.querySelectorAll('.table-search-input').forEach(function (input) {
+       input.addEventListener('input', filterTableRows);
+     });
+   });
+ </script>
 </body>
 </html>

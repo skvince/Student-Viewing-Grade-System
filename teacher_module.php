@@ -32,8 +32,61 @@ if ($conn) {
 }
 
 // --- Data Preparation ---
-$schoolYear = $_GET['school_year'] ?? '2025-2026';
-$semester = $_GET['semester'] ?? '1st Semester';
+$schoolYear = $_GET['school_year'] ?? '';
+$semester = $_GET['semester'] ?? '';
+
+// Auto-detect current year/sem if not provided - get year-semester pairs
+$yearSemData = [];
+$conn = db_connect();
+if ($conn) {
+    $stmt = $conn->prepare("SELECT DISTINCT school_year, semester FROM assignments WHERE teacher_id = ? ORDER BY school_year DESC, FIELD(semester, '1st Semester', '2nd Semester', 'Summer')");
+    $stmt->bind_param('i', $userId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    while ($r = $res->fetch_assoc()) {
+        $yearSemData[$r['school_year']][] = $r['semester'];
+    }
+    $stmt->close();
+    $conn->close();
+}
+
+// Build available years list
+$availableYears = array_keys($yearSemData);
+
+// Order years descending
+usort($availableYears, function($a, $b) {
+    return strcmp($b, $a);
+});
+
+// Order semesters within each year
+$semOrder = ['1st Semester', '2nd Semester', 'Summer'];
+foreach ($yearSemData as $year => &$sems) {
+    usort($sems, function($a, $b) use ($semOrder) {
+        $posA = array_search($a, $semOrder);
+        $posB = array_search($b, $semOrder);
+        $posA = $posA === false ? 999 : $posA;
+        $posB = $posB === false ? 999 : $posB;
+        return $posA <=> $posB;
+    });
+}
+
+// Auto-detect: pick first valid year-semester pair
+if (!$schoolYear && !empty($availableYears)) {
+    $schoolYear = $availableYears[0];
+}
+if ($schoolYear && empty($semester) && !empty($yearSemData[$schoolYear])) {
+    $semester = $yearSemData[$schoolYear][0];
+}
+
+// Fallbacks
+if (!$schoolYear) $schoolYear = '2025-2026';
+if (!$semester) $semester = '1st Semester';
+
+// Validate: if selected semester is not valid for selected year, pick first valid
+if (!empty($yearSemData[$schoolYear]) && !in_array($semester, $yearSemData[$schoolYear])) {
+    $semester = $yearSemData[$schoolYear][0];
+}
+
 $assignments = get_teacher_assignments($userId, $schoolYear, $semester);
 $sections = [];
 
@@ -98,6 +151,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_grades'])) {
     header('Location: ' . $_SERVER['PHP_SELF'] . '?section_id=' . $sectionId . '&subject_id=' . $subjectId . '&school_year=' . urlencode($sy) . '&semester=' . urlencode($sem));
     exit;
 }
+
+// Prepare JSON data for JavaScript
+$yearSemJson = json_encode($yearSemData);
+$availableYearsJson = json_encode($availableYears);
 ?>
 <!doctype html>
 <html lang="en">
@@ -174,18 +231,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_grades'])) {
         <div class="global-term-container">
             <div class="filter-group">
                 <label for="global-sy-select"><i class="fa-solid fa-calendar-days"></i> Academic Year:</label>
-                <select id="global-sy-select" class="global-select" onchange="window.location.href='?school_year='+this.value+'&semester=<?php echo urlencode($semester); ?>'">
-                    <?php foreach (['2025-2026','2024-2025','2026-2027'] as $y): ?>
-                        <option value="<?php echo $y; ?>" <?php echo $schoolYear===$y?'selected':''; ?>><?php echo $y; ?></option>
+                <select id="global-sy-select" class="global-select">
+                    <?php foreach ($availableYears as $y): ?>
+                        <option value="<?php echo htmlspecialchars($y); ?>" <?php echo $schoolYear===$y?'selected':''; ?>><?php echo htmlspecialchars($y); ?></option>
                     <?php endforeach; ?>
+                    <?php if (empty($availableYears)): ?>
+                        <option value="2025-2026" selected>2025-2026</option>
+                        <option value="2024-2025">2024-2025</option>
+                        <option value="2026-2027">2026-2027</option>
+                    <?php endif; ?>
                 </select>
             </div>
             <div class="filter-group">
                 <label for="global-sem-select"><i class="fa-solid fa-clock"></i> Semester:</label>
-                <select id="global-sem-select" class="global-select" onchange="window.location.href='?semester='+this.value+'&school_year=<?php echo urlencode($schoolYear); ?>'">
-                    <option value="1st Semester" <?php echo $semester==='1st Semester'?'selected':''; ?>>1st Semester</option>
-                    <option value="2nd Semester" <?php echo $semester==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
-                    <option value="Summer" <?php echo $semester==='Summer'?'selected':''; ?>>Summer</option>
+                <select id="global-sem-select" class="global-select">
+                    <?php 
+                    $currentSems = !empty($yearSemData[$schoolYear]) ? $yearSemData[$schoolYear] : ['1st Semester', '2nd Semester', 'Summer'];
+                    foreach ($currentSems as $s): ?>
+                        <option value="<?php echo htmlspecialchars($s); ?>" <?php echo $semester===$s?'selected':''; ?>><?php echo htmlspecialchars($s); ?></option>
+                    <?php endforeach; ?>
                 </select>
             </div>
         </div>
@@ -200,7 +264,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_grades'])) {
                         </thead>
                         <tbody>
                         <?php if (empty($sections)): ?>
-                            <tr><td colspan="5" style="text-align:center;padding:24px;">No sections found.</td></tr>
+                            <tr><td colspan="5" style="text-align:center;padding:24px;">No sections found for <?php echo htmlspecialchars($schoolYear); ?> - <?php echo htmlspecialchars($semester); ?>.</td></tr>
                         <?php else: foreach ($sections as $sec): ?>
                             <tr>
                                 <td><strong><?php echo htmlspecialchars($sec['code']); ?></strong></td>
@@ -280,30 +344,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_grades'])) {
     </main>
 
     <script>
-        // Grade Calculation Logic
-        document.querySelectorAll('.grade-input').forEach(input => {
-            input.addEventListener('input', function() {
-                const row = this.closest('tr');
-                const inputs = row.querySelectorAll('.grade-input');
-                const p = parseFloat(inputs[0].value), m = parseFloat(inputs[1].value), f = parseFloat(inputs[2].value);
-                const avgSpan = row.querySelector('.calculated-final'), gwaSpan = row.querySelector('.gwa-badge'), statusSpan = row.querySelector('.status-badge');
-                
-                if (!isNaN(p) && !isNaN(m) && !isNaN(f)) {
-                    const avg = (p + m + f) / 3;
-                    avgSpan.textContent = avg.toFixed(2) + '%';
-                    gwaSpan.textContent = getGwa(avg);
-                    statusSpan.textContent = avg >= 75 ? 'Passed' : 'Failed';
-                    statusSpan.className = 'status-badge ' + (avg >= 75 ? 'badge-pass' : 'badge-fail');
-                }
-            });
-        });
+    // Variables
+    const yearSemData = <?php echo $yearSemJson; ?>;
+    const availableYears = <?php echo $availableYearsJson; ?>;
+    const globalYearSelect = document.getElementById('global-sy-select');
+    const globalSemSelect = document.getElementById('global-sem-select');
 
-        function getGwa(pct) {
-            if (pct >= 97) return '1.00'; if (pct >= 94) return '1.25'; if (pct >= 91) return '1.50';
-            if (pct >= 88) return '1.75'; if (pct >= 85) return '2.00'; if (pct >= 82) return '2.25';
-            if (pct >= 79) return '2.50'; if (pct >= 76) return '2.75'; if (pct >= 75) return '3.00';
-            return '5.00';
-        }
+    // Handlers
+    function updateSemesterOptions() {
+        const selectedYear = globalYearSelect.value;
+        const sems = yearSemData[selectedYear] || ['1st Semester', '2nd Semester', 'Summer'];
+        const currentSem = globalSemSelect.value;
+        
+        globalSemSelect.innerHTML = '';
+        sems.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s;
+            opt.textContent = s;
+            if (s === currentSem || (currentSem === '' && s === sems[0])) {
+                opt.selected = true;
+            }
+            globalSemSelect.appendChild(opt);
+        });
+    }
+
+    function applyFilters() {
+        const year = globalYearSelect.value;
+        const sem = globalSemSelect.value;
+        window.location.href = '?school_year=' + encodeURIComponent(year) + '&semester=' + encodeURIComponent(sem);
+    }
+
+    // Initial sync for semesters
+    updateSemesterOptions();
+
+    // Listeners
+    globalYearSelect?.addEventListener('change', () => {
+        updateSemesterOptions();
+        applyFilters();
+    });
+    globalSemSelect?.addEventListener('change', applyFilters);
+
+    // Grade Calculation Logic
+    document.querySelectorAll('.grade-input').forEach(input => {
+        input.addEventListener('input', function() {
+            const row = this.closest('tr');
+            const inputs = row.querySelectorAll('.grade-input');
+            const p = parseFloat(inputs[0].value), m = parseFloat(inputs[1].value), f = parseFloat(inputs[2].value);
+            const avgSpan = row.querySelector('.calculated-final'), gwaSpan = row.querySelector('.gwa-badge'), statusSpan = row.querySelector('.status-badge');
+            
+            if (!isNaN(p) && !isNaN(m) && !isNaN(f)) {
+                const avg = (p + m + f) / 3;
+                avgSpan.textContent = avg.toFixed(2) + '%';
+                gwaSpan.textContent = getGwa(avg);
+                statusSpan.textContent = avg >= 75 ? 'Passed' : 'Failed';
+                statusSpan.className = 'status-badge ' + (avg >= 75 ? 'badge-pass' : 'badge-fail');
+            }
+        });
+    });
+
+    function getGwa(pct) {
+        if (pct >= 97) return '1.00'; if (pct >= 94) return '1.25'; if (pct >= 91) return '1.50';
+        if (pct >= 88) return '1.75'; if (pct >= 85) return '2.00'; if (pct >= 82) return '2.25';
+        if (pct >= 79) return '2.50'; if (pct >= 76) return '2.75'; if (pct >= 75) return '3.00';
+        return '5.00';
+    }
     </script>
 </body>
 </html>

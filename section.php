@@ -6,6 +6,9 @@ if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
     exit;
 }
 
+$selectedYear = $_GET['school_year'] ?? null;
+$selectedSem = $_GET['semester'] ?? null;
+
 $sections = [];
 $departments = [];
 $saveError = '';
@@ -229,9 +232,23 @@ if ($conn) {
         if ($q) $q->free();
     }
 
+    // Auto-detect year/sem if not set
+    if (!$selectedYear) {
+        $res = $conn->query("SELECT school_year, semester FROM sections WHERE school_year IS NOT NULL AND semester IS NOT NULL ORDER BY created_at DESC LIMIT 1");
+        if ($res && $row = $res->fetch_assoc()) {
+            $selectedYear = $row['school_year'];
+            $selectedSem = $row['semester'];
+        }
+        if ($res) $res->free();
+    }
+    if (!$selectedYear) $selectedYear = '2025-2026';
+    if (!$selectedSem) $selectedSem = '1st Semester';
+
     $res = $conn->query(
         "SELECT id, section_code, name, department, school_year, semester " .
         "FROM sections " .
+        "WHERE school_year = '" . $conn->real_escape_string($selectedYear) . "' " .
+        "AND semester = '" . $conn->real_escape_string($selectedSem) . "' " .
         "ORDER BY created_at DESC"
     );
     if ($res) {
@@ -900,13 +917,7 @@ if ($conn) {
         <a href="assign.php"><i class="fa-solid fa-gear"></i> Assign Module</a>
       </nav>
     </div>
-<<<<<<< Updated upstream
     <a href="login.php?logout=1" class="logout-btn"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
-=======
-    <a href="login.php?logout=1" class="logout-btn">
-      <i class="fa-solid fa-right-from-bracket"></i> Logout
-    </a>
->>>>>>> Stashed changes
   </aside>
   <div class="main-content">
     <div class="global-term-container">
@@ -916,8 +927,8 @@ if ($conn) {
           Academic Year:
         </label>
         <select id="global-filter-year" class="global-select">
-          <option value="2025-2026">2025–2026</option>
-          <option value="2024-2025">2024–2025</option>
+          <option value="2025-2026" <?= $selectedYear === '2025-2026' ? 'selected' : '' ?>>2025–2026</option>
+          <option value="2024-2025" <?= $selectedYear === '2024-2025' ? 'selected' : '' ?>>2024–2025</option>
         </select>
       </div>
 
@@ -926,8 +937,8 @@ if ($conn) {
           <i class="fa-solid fa-clock" aria-hidden="true"></i> Semester:
         </label>
         <select id="global-filter-sem" class="global-select">
-          <option value="1st Semester">1st Semester</option>
-          <option value="2nd Semester">2nd Semester</option>
+          <option value="1st Semester" <?= $selectedSem === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
+          <option value="2nd Semester" <?= $selectedSem === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
         </select>
       </div>
     </div>
@@ -1141,115 +1152,129 @@ if (count($sections)) {
       </div>
     </div>
   </div>
-  <script>
-    document.addEventListener('DOMContentLoaded', function () {
-      const departmentForm = document.getElementById('department-form');
-      const sectionForm = document.getElementById('section-form');
-      const departmentTableBody = document.getElementById('departments-table-body');
-      const sectionTableBody = document.getElementById('sections-table-body');
-      const deptSearchInput = document.getElementById('dept-search-input');
-      const sectionSearchInput = document.getElementById('section-search-input');
-      const deptCodeInput = document.getElementById('dept-code-input');
-      const deptNameInput = document.getElementById('dept-name-input');
-      const secNameInput = document.getElementById('sec-name-input');
-      const secYearSelect = document.getElementById('sec-year-select');
-      const secSemSelect = document.getElementById('sec-sem-select');
-      const secDeptSelect = document.getElementById('sec-dept-select');
+<script>
+     // Variables
+     const globalYearSelect = document.getElementById('global-filter-year');
+     const globalSemSelect = document.getElementById('global-filter-sem');
+     const departmentForm = document.getElementById('department-form');
+     const sectionForm = document.getElementById('section-form');
+     const departmentTableBody = document.getElementById('departments-table-body');
+     const sectionTableBody = document.getElementById('sections-table-body');
+     const deptSearchInput = document.getElementById('dept-search-input');
+     const sectionSearchInput = document.getElementById('section-search-input');
+     const deptCodeInput = document.getElementById('dept-code-input');
+     const deptNameInput = document.getElementById('dept-name-input');
+     const secNameInput = document.getElementById('sec-name-input');
+     const secYearSelect = document.getElementById('sec-year-select');
+     const secSemSelect = document.getElementById('sec-sem-select');
+     const secDeptSelect = document.getElementById('sec-dept-select');
 
-      function renderEmptyRow(tableBody, colspan, message) {
-        tableBody.innerHTML = `
-          <tr>
-            <td colspan="${colspan}" style="text-align:center; color:#666; padding:18px;">${message}</td>
-          </tr>
-        `;
-      }
+     // Handlers
+     function handleYearChange() {
+       const url = new URL(window.location);
+       url.searchParams.set('school_year', this.value);
+       window.location = url;
+     }
 
-      function addDepartmentOption(code, name) {
-        if (!secDeptSelect) return;
-        const optionValue = name;
-        const existing = Array.from(secDeptSelect.options).find(opt => opt.value === optionValue);
-        if (existing) return;
+     function handleSemChange() {
+       const url = new URL(window.location);
+       url.searchParams.set('semester', this.value);
+       window.location = url;
+     }
 
-        const option = document.createElement('option');
-        option.value = optionValue;
-        option.textContent = `${code} - ${name}`;
-        secDeptSelect.appendChild(option);
-      }
+     function renderEmptyRow(tableBody, colspan, message) {
+       tableBody.innerHTML = `
+         <tr>
+           <td colspan="${colspan}" style="text-align:center; color:#666; padding:18px;">${message}</td>
+         </tr>
+       `;
+     }
 
-      function removeDepartmentOption(name) {
-        if (!secDeptSelect) return;
-        const option = Array.from(secDeptSelect.options).find(opt => opt.value === name);
-        if (option) {
-          option.remove();
-        }
-      }
+     function addDepartmentOption(code, name) {
+       if (!secDeptSelect) return;
+       const optionValue = name;
+       const existing = Array.from(secDeptSelect.options).find(opt => opt.value === optionValue);
+       if (existing) return;
+       const option = document.createElement('option');
+       option.value = optionValue;
+       option.textContent = `${code} - ${name}`;
+       secDeptSelect.appendChild(option);
+     }
 
-      function normalizeText(text) {
-        return text.toLowerCase().trim();
-      }
+     function removeDepartmentOption(name) {
+       if (!secDeptSelect) return;
+       const option = Array.from(secDeptSelect.options).find(opt => opt.value === name);
+       if (option) {
+         option.remove();
+       }
+     }
 
-      function addDepartmentRow(code, name) {
-        const row = document.createElement('tr');
-        row.innerHTML = `
-          <td>${code}</td>
-          <td>${name}</td>
-          <td class="actions-cell">
-            <i class="fa-solid fa-trash-can" role="button" aria-label="Delete department"></i>
-          </td>
-        `;
-        row.querySelector('.fa-trash-can').addEventListener('click', () => {
-          row.remove();
-          removeDepartmentOption(name);
-          if (!departmentTableBody.querySelector('tr')) {
-            renderEmptyRow(departmentTableBody, 3, 'No departments available.');
-          }
-        });
-        if (departmentTableBody.querySelector('td[colspan]')) {
-          departmentTableBody.innerHTML = '';
-        }
-        departmentTableBody.appendChild(row);
-        addDepartmentOption(code, name);
-      }
+     function normalizeText(text) {
+       return text.toLowerCase().trim();
+     }
 
-      function filterTableRows(input, tableBody, placeholderText) {
-        const query = normalizeText(input.value);
-        const rows = Array.from(tableBody.querySelectorAll('tr')).filter(row => !row.querySelector('td[colspan]'));
-        let visibleCount = 0;
+     function addDepartmentRow(code, name) {
+       const row = document.createElement('tr');
+       row.innerHTML = `
+         <td>${code}</td>
+         <td>${name}</td>
+         <td class="actions-cell">
+           <i class="fa-solid fa-trash-can" role="button" aria-label="Delete department"></i>
+         </td>
+       `;
+       row.querySelector('.fa-trash-can').addEventListener('click', () => {
+         row.remove();
+         removeDepartmentOption(name);
+         if (!departmentTableBody.querySelector('tr')) {
+           renderEmptyRow(departmentTableBody, 3, 'No departments available.');
+         }
+       });
+       if (departmentTableBody.querySelector('td[colspan]')) {
+         departmentTableBody.innerHTML = '';
+       }
+       departmentTableBody.appendChild(row);
+       addDepartmentOption(code, name);
+     }
 
-        rows.forEach(row => {
-          const text = normalizeText(row.textContent);
-          const match = text.includes(query);
-          row.style.display = match ? '' : 'none';
-          if (match) visibleCount++;
-        });
+     function filterTableRows(input, tableBody, placeholderText) {
+       const query = normalizeText(input.value);
+       const rows = Array.from(tableBody.querySelectorAll('tr')).filter(row => !row.querySelector('td[colspan]'));
+       let visibleCount = 0;
+       rows.forEach(row => {
+         const text = normalizeText(row.textContent);
+         const match = text.includes(query);
+         row.style.display = match ? '' : 'none';
+         if (match) visibleCount++;
+       });
+       const placeholderRow = tableBody.querySelector('td[colspan]')?.closest('tr');
+       const colspan = tableBody.id === 'departments-table-body' ? 3 : 7;
+       if (visibleCount === 0) {
+         if (!placeholderRow) {
+           renderEmptyRow(tableBody, colspan, placeholderText);
+         }
+       } else if (placeholderRow) {
+         placeholderRow.remove();
+       }
+     }
 
-        const placeholderRow = tableBody.querySelector('td[colspan]')?.closest('tr');
-        const colspan = tableBody.id === 'departments-table-body' ? 3 : 7;
-        if (visibleCount === 0) {
-          if (!placeholderRow) {
-            renderEmptyRow(tableBody, colspan, placeholderText);
-          }
-        } else if (placeholderRow) {
-          placeholderRow.remove();
-        }
-      }
-
-      if (deptSearchInput) {
-        deptSearchInput.addEventListener('input', function () {
-          filterTableRows(this, departmentTableBody, 'No departments matched your search.');
-        });
-      }
-
-      if (sectionSearchInput) {
-        sectionSearchInput.addEventListener('input', function () {
-          filterTableRows(this, sectionTableBody, 'No sections matched your search.');
-        });
-      }
-
-      if (!departmentTableBody.querySelector('tr')) {
-        renderEmptyRow(departmentTableBody, 3, 'No departments available.');
-      }
-    });
-  </script>
+     // Listeners
+     document.addEventListener('DOMContentLoaded', function () {
+       globalYearSelect?.addEventListener('change', handleYearChange);
+       globalSemSelect?.addEventListener('change', handleSemChange);
+       if (deptSearchInput) {
+         deptSearchInput.addEventListener('input', function () {
+           filterTableRows(this, departmentTableBody, 'No departments matched your search.');
+         });
+       }
+       if (sectionSearchInput) {
+         sectionSearchInput.addEventListener('input', function () {
+           filterTableRows(this, sectionTableBody, 'No sections matched your search.');
+         });
+       }
+       if (!departmentTableBody.querySelector('tr')) {
+         renderEmptyRow(departmentTableBody, 3, 'No departments available.');
+       }
+     });
+   </script>
 </body>
 </html>

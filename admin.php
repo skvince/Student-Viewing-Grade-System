@@ -6,6 +6,9 @@ if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
     exit;
 }
 
+$selectedYear = $_GET['school_year'] ?? null;
+$selectedSem = $_GET['semester'] ?? null;
+
 $totalTeachers = 0;
 $totalStudents = 0;
 $totalAssignments = 0;
@@ -13,6 +16,17 @@ $recentAssignments = [];
 
 $conn = db_connect();
 if ($conn) {
+    if (!$selectedYear) {
+        $res = $conn->query("SELECT school_year, semester FROM assignments WHERE school_year IS NOT NULL AND semester IS NOT NULL ORDER BY created_at DESC LIMIT 1");
+        if ($res && $row = $res->fetch_assoc()) {
+            $selectedYear = $row['school_year'];
+            $selectedSem = $row['semester'];
+        }
+        if ($res) $res->free();
+    }
+    if (!$selectedYear) $selectedYear = '2025-2026';
+    if (!$selectedSem) $selectedSem = '1st Semester';
+
     $res = $conn->query("SELECT COUNT(*) AS count FROM teachers");
     if ($res) {
         $row = $res->fetch_assoc();
@@ -25,17 +39,20 @@ if ($conn) {
         $totalStudents = intval($row['count'] ?? 0);
         $res->free();
     }
-    $res = $conn->query("SELECT COUNT(*) AS count FROM assignments");
+    $res = $conn->query("SELECT COUNT(*) AS count FROM assignments WHERE school_year = '" . $conn->real_escape_string($selectedYear) . "' AND semester = '" . $conn->real_escape_string($selectedSem) . "'");
     if ($res) {
         $row = $res->fetch_assoc();
         $totalAssignments = intval($row['count'] ?? 0);
         $res->free();
     }
     $res = $conn->query(
-        "SELECT a.module, a.school_year, a.semester, t.name AS teacher_name, s.section_code AS section_name " .
+        "SELECT a.school_year, a.semester, t.name AS teacher_name, s.section_code AS section_name, sj.subject_code, sj.title AS subject_title " .
         "FROM assignments a " .
         "LEFT JOIN teachers t ON a.teacher_id = t.id " .
         "LEFT JOIN sections s ON a.section_id = s.id " .
+        "LEFT JOIN subjects sj ON a.subject_id = sj.id " .
+        "WHERE a.school_year = '" . $conn->real_escape_string($selectedYear) . "' " .
+        "AND a.semester = '" . $conn->real_escape_string($selectedSem) . "' " .
         "ORDER BY a.created_at DESC LIMIT 10"
     );
     if ($res) {
@@ -720,13 +737,7 @@ if ($conn) {
         <a href="assign.php"><i class="fa-solid fa-gear"></i> Assign Module</a>
       </nav>
     </div>
-<<<<<<< Updated upstream
     <a href="login.php?logout=1" class="logout-btn"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
-=======
-    <a href="login.php?logout=1" class="logout-btn">
-      <i class="fa-solid fa-right-from-bracket"></i> Logout
-    </a>
->>>>>>> Stashed changes
   </aside>
   <div class="main-content">
     <div class="global-term-container">
@@ -736,8 +747,8 @@ if ($conn) {
           Academic Year:
         </label>
         <select id="global-filter-year" class="global-select">
-          <option value="2025-2026">2025–2026</option>
-          <option value="2024-2025">2024–2025</option>
+          <option value="2025-2026" <?= $selectedYear === '2025-2026' ? 'selected' : '' ?>>2025–2026</option>
+          <option value="2024-2025" <?= $selectedYear === '2024-2025' ? 'selected' : '' ?>>2024–2025</option>
         </select>
       </div>
 
@@ -746,8 +757,8 @@ if ($conn) {
           <i class="fa-solid fa-clock" aria-hidden="true"></i> Semester:
         </label>
         <select id="global-filter-sem" class="global-select">
-          <option value="1st Semester">1st Semester</option>
-          <option value="2nd Semester">2nd Semester</option>
+          <option value="1st Semester" <?= $selectedSem === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
+          <option value="2nd Semester" <?= $selectedSem === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
         </select>
       </div>
     </div>
@@ -812,9 +823,10 @@ if ($conn) {
 <?php
 if (count($recentAssignments)) {
     foreach ($recentAssignments as $assignment) {
+        $subjectDisplay = ($assignment['subject_code'] ?? '') . ' - ' . ($assignment['subject_title'] ?? '');
         echo '<tr>';
         echo '<td>' . htmlspecialchars($assignment['teacher_name'] ?? '') . '</td>';
-        echo '<td>' . htmlspecialchars($assignment['module'] ?? '') . '</td>';
+        echo '<td>' . htmlspecialchars($subjectDisplay) . '</td>';
         echo '<td>' . htmlspecialchars($assignment['section_name'] ?? '') . '</td>';
         echo '<td>' . htmlspecialchars(trim(($assignment['school_year'] ?? '') . ' ' . ($assignment['semester'] ?? ''))) . '</td>';
         echo '</tr>';
@@ -829,46 +841,42 @@ if (count($recentAssignments)) {
       </div>
     </div>
   </div>
-  <script>
-    document.addEventListener('DOMContentLoaded', function () {
-      const searchInput = document.querySelector('.table-search-input');
-      const tableBody = document.getElementById('dashboard-recent-table-body');
-      const totalAssignments = document.getElementById('dash-total-assignments');
-      const totalTeachers = document.getElementById('dash-total-teachers');
-      const totalStudents = document.getElementById('dash-total-students');
+<script>
+     // Variables
+     const searchInput = document.querySelector('.table-search-input');
+     const tableBody = document.getElementById('dashboard-recent-table-body');
+     const globalYearSelect = document.getElementById('global-filter-year');
+     const globalSemSelect = document.getElementById('global-filter-sem');
 
-      function renderEmptyRow() {
-        tableBody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#666;">No recent assignments available.</td></tr>';
-      }
+     // Handlers
+     function filterAssignments() {
+       const query = searchInput.value.toLowerCase().trim();
+       const rows = tableBody.querySelectorAll('tr');
+       rows.forEach(row => {
+         row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
+       });
+     }
 
-      function updateDashboardMetrics() {
-        const rows = tableBody.querySelectorAll('tr');
-        const assignmentsCount = rows.length === 1 && rows[0].querySelector('td[colspan]') ? 0 : rows.length;
-        totalAssignments.textContent = assignmentsCount;
-      }
+     function handleYearChange() {
+       const url = new URL(window.location);
+       url.searchParams.set('school_year', this.value);
+       window.location = url;
+     }
 
-      function filterAssignments() {
-        const query = searchInput.value.toLowerCase().trim();
-        const rows = tableBody.querySelectorAll('tr');
-        let visibleCount = 0;
+     function handleSemChange() {
+       const url = new URL(window.location);
+       url.searchParams.set('semester', this.value);
+       window.location = url;
+     }
 
-        rows.forEach(row => {
-          const match = row.textContent.toLowerCase().includes(query);
-          row.style.display = match ? '' : 'none';
-          if (match) visibleCount++;
-        });
-
-        if (visibleCount === 0) {
-          renderEmptyRow();
-        }
-      }
-
-      renderEmptyRow();
-      updateDashboardMetrics();
-      if (searchInput) {
-        searchInput.addEventListener('input', filterAssignments);
-      }
-    });
-  </script>
+     // Listeners
+     document.addEventListener('DOMContentLoaded', function () {
+       globalYearSelect?.addEventListener('change', handleYearChange);
+       globalSemSelect?.addEventListener('change', handleSemChange);
+       if (searchInput) {
+         searchInput.addEventListener('input', filterAssignments);
+       }
+     });
+   </script>
 </body>
 </html>
