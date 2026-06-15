@@ -2,7 +2,6 @@
 require_once __DIR__ . '/inc/functions.php'; 
 session_start();
 
-// --- Authentication & Session Management ---
 if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'teacher') {
     if (isset($_GET['teacher_id'])) {
         $_SESSION['user_role'] = 'teacher';
@@ -31,6 +30,7 @@ if ($conn) {
     $conn->close();
 }
 
+<<<<<<< HEAD
 // --- Data Preparation ---
 $schoolYear = $_GET['school_year'] ?? '';
 $semester = $_GET['semester'] ?? '';
@@ -86,6 +86,16 @@ if (!$semester) $semester = '1st Semester';
 if (!empty($yearSemData[$schoolYear]) && !in_array($semester, $yearSemData[$schoolYear])) {
     $semester = $yearSemData[$schoolYear][0];
 }
+=======
+$term = get_global_term();
+$schoolYear = $term['year'];
+$semester   = $term['semester'];
+
+// Keep teacher term consistent with the global filter.
+// (Avoid mixing legacy GET parameters that can cause semester flips.)
+$_SESSION['teacher_sy']  = $schoolYear;
+$_SESSION['teacher_sem'] = $semester;
+>>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
 
 $assignments = get_teacher_assignments($userId, $schoolYear, $semester);
 $sections = [];
@@ -148,7 +158,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_grades'])) {
     }
     
     audit_log('save_grades', $userId);
-    header('Location: ' . $_SERVER['PHP_SELF'] . '?section_id=' . $sectionId . '&subject_id=' . $subjectId . '&school_year=' . urlencode($sy) . '&semester=' . urlencode($sem));
+     header('Location: ' . $_SERVER['PHP_SELF'] . '?section_id=' . $sectionId . '&subject_id=' . $subjectId . '&global_year=' . urlencode($schoolYear) . '&global_sem=' . urlencode($semester));
     exit;
 }
 
@@ -231,9 +241,15 @@ $availableYearsJson = json_encode($availableYears);
         <div class="global-term-container">
             <div class="filter-group">
                 <label for="global-sy-select"><i class="fa-solid fa-calendar-days"></i> Academic Year:</label>
+<<<<<<< HEAD
                 <select id="global-sy-select" class="global-select">
                     <?php foreach ($availableYears as $y): ?>
                         <option value="<?php echo htmlspecialchars($y); ?>" <?php echo $schoolYear===$y?'selected':''; ?>><?php echo htmlspecialchars($y); ?></option>
+=======
+                <select id="global-sy-select" class="global-select" onchange="syncTeacherFilter()">
+                    <?php foreach (['2025-2026','2026-2027'] as $y): ?>
+                        <option value="<?php echo $y; ?>" <?php echo $schoolYear===$y?'selected':''; ?>><?php echo $y; ?></option>
+>>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
                     <?php endforeach; ?>
                     <?php if (empty($availableYears)): ?>
                         <option value="2025-2026" selected>2025-2026</option>
@@ -244,12 +260,19 @@ $availableYearsJson = json_encode($availableYears);
             </div>
             <div class="filter-group">
                 <label for="global-sem-select"><i class="fa-solid fa-clock"></i> Semester:</label>
+<<<<<<< HEAD
                 <select id="global-sem-select" class="global-select">
                     <?php 
                     $currentSems = !empty($yearSemData[$schoolYear]) ? $yearSemData[$schoolYear] : ['1st Semester', '2nd Semester', 'Summer'];
                     foreach ($currentSems as $s): ?>
                         <option value="<?php echo htmlspecialchars($s); ?>" <?php echo $semester===$s?'selected':''; ?>><?php echo htmlspecialchars($s); ?></option>
                     <?php endforeach; ?>
+=======
+                <select id="global-sem-select" class="global-select" onchange="syncTeacherFilter()">
+                    <option value="1st Semester" <?php echo $semester==='1st Semester'?'selected':''; ?>>1st Semester</option>
+                    <option value="2nd Semester" <?php echo $semester==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
+                    <option value="Summer" <?php echo $semester==='Summer'?'selected':''; ?>>Summer</option>
+>>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
                 </select>
             </div>
         </div>
@@ -271,7 +294,7 @@ $availableYearsJson = json_encode($availableYears);
                                 <td><?php echo htmlspecialchars($sec['name']); ?></td>
                                 <td><?php echo htmlspecialchars($sec['department'] ?? 'N/A'); ?></td>
                                 <td><?php echo count($sec['subjects']); ?></td>
-                                <td><a href="?section_id=<?php echo $sec['id']; ?>&school_year=<?php echo urlencode($schoolYear); ?>&semester=<?php echo urlencode($semester); ?>" style="padding:6px 14px; background-color:var(--primary-green); color:white; border-radius:6px; text-decoration:none;">Select</a></td>
+                                <td><a href="?section_id=<?php echo $sec['id']; ?>&global_year=<?php echo urlencode($schoolYear); ?>&global_sem=<?php echo urlencode($semester); ?>" style="padding:6px 14px; background-color:var(--primary-green); color:white; border-radius:6px; text-decoration:none;">Select</a></td>
                             </tr>
                         <?php endforeach; endif; ?>
                     </tbody>
@@ -293,7 +316,7 @@ $availableYearsJson = json_encode($availableYears);
                                     <td><strong><?php echo htmlspecialchars($subj['code']); ?></strong></td>
                                     <td><?php echo htmlspecialchars($subj['title']); ?></td>
                                     <td><?php echo htmlspecialchars($subj['units']); ?></td>
-                                    <td><a href="?section_id=<?php echo $activeSectionId; ?>&subject_id=<?php echo $subj['subject_id']; ?>&school_year=<?php echo urlencode($schoolYear); ?>&semester=<?php echo urlencode($semester); ?>" style="padding:6px 14px; background-color:var(--primary-green); color:white; border-radius:6px; text-decoration:none;">Select</a></td>
+                                    <td><a href="?section_id=<?php echo $activeSectionId; ?>&subject_id=<?php echo $subj['subject_id']; ?>&global_year=<?php echo urlencode($schoolYear); ?>&global_sem=<?php echo urlencode($semester); ?>" style="padding:6px 14px; background-color:var(--primary-green); color:white; border-radius:6px; text-decoration:none;">Select</a></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
@@ -302,7 +325,7 @@ $availableYearsJson = json_encode($availableYears);
             </div>
 
         <?php else: ?>
-            <a href="?school_year=<?php echo urlencode($schoolYear); ?>&semester=<?php echo urlencode($semester); ?>" class="btn-back"><i class="fa-solid fa-arrow-left"></i> Back to Sections</a>
+            <a href="?global_year=<?php echo urlencode($schoolYear); ?>&global_sem=<?php echo urlencode($semester); ?>" class="btn-back"><i class="fa-solid fa-arrow-left"></i> Back to Sections</a>
             <h1 class="view-title">Class Grades</h1>
             <p class="view-subtitle"><?php echo htmlspecialchars("$schoolYear | $semester"); ?></p>
 
@@ -344,11 +367,43 @@ $availableYearsJson = json_encode($availableYears);
     </main>
 
     <script>
+<<<<<<< HEAD
     // Variables
     const yearSemData = <?php echo $yearSemJson; ?>;
     const availableYears = <?php echo $availableYearsJson; ?>;
     const globalYearSelect = document.getElementById('global-sy-select');
     const globalSemSelect = document.getElementById('global-sem-select');
+=======
+        function syncTeacherFilter() {
+            const year = document.getElementById('global-sy-select').value;
+            const sem  = document.getElementById('global-sem-select').value;
+            const url  = new URL(window.location);
+            url.searchParams.set('global_year', year);
+            url.searchParams.set('global_sem', sem);
+            url.searchParams.delete('school_year');
+            url.searchParams.delete('semester');
+            url.searchParams.delete('academic_year');
+            window.location.href = url.toString();
+        }
+
+        // Grade Calculation Logic
+        document.querySelectorAll('.grade-input').forEach(input => {
+            input.addEventListener('input', function() {
+                const row = this.closest('tr');
+                const inputs = row.querySelectorAll('.grade-input');
+                const p = parseFloat(inputs[0].value), m = parseFloat(inputs[1].value), f = parseFloat(inputs[2].value);
+                const avgSpan = row.querySelector('.calculated-final'), gwaSpan = row.querySelector('.gwa-badge'), statusSpan = row.querySelector('.status-badge');
+                
+                if (!isNaN(p) && !isNaN(m) && !isNaN(f)) {
+                    const avg = (p + m + f) / 3;
+                    avgSpan.textContent = avg.toFixed(2) + '%';
+                    gwaSpan.textContent = getGwa(avg);
+                    statusSpan.textContent = avg >= 75 ? 'Passed' : 'Failed';
+                    statusSpan.className = 'status-badge ' + (avg >= 75 ? 'badge-pass' : 'badge-fail');
+                }
+            });
+        });
+>>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
 
     // Handlers
     function updateSemesterOptions() {

@@ -6,8 +6,15 @@ if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
     exit;
 }
 
+<<<<<<< HEAD
 $selectedYear = $_GET['school_year'] ?? null;
 $selectedSem = $_GET['semester'] ?? null;
+=======
+$term = get_global_term();
+$selectedYear = $term['year'];
+$selectedSem  = $term['semester'];
+
+>>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
 
 $sections = [];
 $departments = [];
@@ -247,8 +254,12 @@ if ($conn) {
     $res = $conn->query(
         "SELECT id, section_code, name, department, school_year, semester " .
         "FROM sections " .
+<<<<<<< HEAD
         "WHERE school_year = '" . $conn->real_escape_string($selectedYear) . "' " .
         "AND semester = '" . $conn->real_escape_string($selectedSem) . "' " .
+=======
+        "WHERE school_year = '" . $conn->real_escape_string($selectedYear) . "' AND semester = '" . $conn->real_escape_string($selectedSem) . "' " .
+>>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
         "ORDER BY created_at DESC"
     );
     if ($res) {
@@ -920,6 +931,7 @@ if ($conn) {
     <a href="login.php?logout=1" class="logout-btn"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
   </aside>
   <div class="main-content">
+<<<<<<< HEAD
     <div class="global-term-container">
       <div class="filter-group">
         <label for="global-filter-year">
@@ -940,8 +952,35 @@ if ($conn) {
           <option value="1st Semester" <?= $selectedSem === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
           <option value="2nd Semester" <?= $selectedSem === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
         </select>
+=======
+    <form method="get" action="" style="margin-bottom:0;">
+      <input type="hidden" name="global_year" id="hidden-global-year" value="<?php echo htmlspecialchars($selectedYear); ?>">
+      <input type="hidden" name="global_sem" id="hidden-global-sem" value="<?php echo htmlspecialchars($selectedSem); ?>">
+      <div class="global-term-container">
+        <div class="filter-group">
+          <label for="global-filter-year">
+            <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
+            Academic Year:
+          </label>
+          <select id="global-filter-year" class="global-select" onchange="syncGlobalFilter()">
+            <option value="2025-2026" <?php echo $selectedYear==='2025-2026'?'selected':''; ?>>2025–2026</option>
+            <option value="2026-2027" <?php echo $selectedYear==='2026-2027'?'selected':''; ?>>2026–2027</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label for="global-filter-sem">
+            <i class="fa-solid fa-clock" aria-hidden="true"></i> Semester:
+          </label>
+          <select id="global-filter-sem" class="global-select" onchange="syncGlobalFilter()">
+            <option value="1st Semester" <?php echo $selectedSem==='1st Semester'?'selected':''; ?>>1st Semester</option>
+            <option value="2nd Semester" <?php echo $selectedSem==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
+            <option value="Summer" <?php echo $selectedSem==='Summer'?'selected':''; ?>>Summer</option>
+          </select>
+        </div>
+>>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
       </div>
-    </div>
+    </form>
 
     <div class="tab-content" style="display: block;">
       <h1 class="view-title">Section & Department</h1>
@@ -1053,22 +1092,23 @@ if (count($departments)) {
               <label for="sec-name-input">Section Name</label>
               <input type="text" id="sec-name-input" name="sec_name" class="form-control" placeholder="Enter section name" required value="<?php echo htmlspecialchars($editingSection['name'] ?? ''); ?>" />
             </div>
-            <div class="form-group">
-              <label for="sec-year-select">School Year</label>
-              <select id="sec-year-select" name="sec_year" class="form-control" required>
-                <option value="" disabled <?php echo !$editingSection ? 'selected' : ''; ?>>Select academic year...</option>
-                <option value="2025-2026" <?= ($editingSection['school_year'] ?? '') === '2025-2026' ? 'selected' : '' ?>>S.Y. 2025-2026</option>
-                <option value="2026-2027" <?= ($editingSection['school_year'] ?? '') === '2026-2027' ? 'selected' : '' ?>>S.Y. 2026-2027</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="sec-sem-select">Semester</label>
-              <select id="sec-sem-select" name="sec_semester" class="form-control" required>
-                <option value="" disabled <?php echo !$editingSection ? 'selected' : ''; ?>>Select semester term...</option>
-                <option value="1st Semester" <?= ($editingSection['semester'] ?? '') === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
-                <option value="2nd Semester" <?= ($editingSection['semester'] ?? '') === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
-              </select>
-            </div>
+          <div class="form-group">
+            <label for="sec-year-select">School Year</label>
+            <select id="sec-year-select" name="sec_year" class="form-control" required>
+              <option value="" disabled <?php echo !$editingSection && $selectedYear==='' ? 'selected' : ''; ?>>Select academic year...</option>
+              <option value="2025-2026" <?= ($editingSection['school_year'] ?? $selectedYear) === '2025-2026' ? 'selected' : '' ?>>S.Y. 2025-2026</option>
+              <option value="2026-2027" <?= ($editingSection['school_year'] ?? $selectedYear) === '2026-2027' ? 'selected' : '' ?>>S.Y. 2026-2027</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="sec-sem-select">Semester</label>
+            <select id="sec-sem-select" name="sec_semester" class="form-control" required>
+              <option value="" disabled <?php echo !$editingSection && $selectedSem==='' ? 'selected' : ''; ?>>Select semester term...</option>
+              <option value="1st Semester" <?= ($editingSection['semester'] ?? $selectedSem) === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
+              <option value="2nd Semester" <?= ($editingSection['semester'] ?? $selectedSem) === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
+              <option value="Summer" <?= ($editingSection['semester'] ?? $selectedSem) === 'Summer' ? 'selected' : '' ?>>Summer</option>
+            </select>
+          </div>
             <div class="form-group">
               <label for="sec-dept-select">Department</label>
               <select id="sec-dept-select" name="sec_department" class="form-control" required>
@@ -1152,6 +1192,7 @@ if (count($sections)) {
       </div>
     </div>
   </div>
+<<<<<<< HEAD
 <script>
      // Variables
      const globalYearSelect = document.getElementById('global-filter-year');
@@ -1168,6 +1209,34 @@ if (count($sections)) {
      const secYearSelect = document.getElementById('sec-year-select');
      const secSemSelect = document.getElementById('sec-sem-select');
      const secDeptSelect = document.getElementById('sec-dept-select');
+=======
+  <script>
+    function syncGlobalFilter() {
+      const year = document.getElementById('global-filter-year').value;
+      const sem  = document.getElementById('global-filter-sem').value;
+      const url  = new URL(window.location);
+      url.searchParams.set('global_year', year);
+      url.searchParams.set('global_sem', sem);
+      url.searchParams.delete('school_year');
+      url.searchParams.delete('semester');
+      url.searchParams.delete('academic_year');
+      window.location.href = url.toString();
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      const departmentForm = document.getElementById('department-form');
+      const sectionForm = document.getElementById('section-form');
+      const departmentTableBody = document.getElementById('departments-table-body');
+      const sectionTableBody = document.getElementById('sections-table-body');
+      const deptSearchInput = document.getElementById('dept-search-input');
+      const sectionSearchInput = document.getElementById('section-search-input');
+      const deptCodeInput = document.getElementById('dept-code-input');
+      const deptNameInput = document.getElementById('dept-name-input');
+      const secNameInput = document.getElementById('sec-name-input');
+      const secYearSelect = document.getElementById('sec-year-select');
+      const secSemSelect = document.getElementById('sec-sem-select');
+      const secDeptSelect = document.getElementById('sec-dept-select');
+>>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
 
      // Handlers
      function handleYearChange() {

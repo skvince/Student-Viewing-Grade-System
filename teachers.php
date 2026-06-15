@@ -1,8 +1,19 @@
 <?php require_once __DIR__ . '/inc/functions.php'; ?>
 <?php
 session_start();
+<<<<<<< HEAD
 $selectedYear = $_GET['school_year'] ?? null;
 $selectedSem = $_GET['semester'] ?? null;
+=======
+$term = get_global_term();
+$selectedYear = $term['year'];
+$selectedSem  = $term['semester'];
+
+// Admin management tables should not depend on the global term filter.
+// They are identity records (teachers registry) and must remain visible across terms.
+// Term filtering is only applied to assignments/grades, not to CRUD registries.
+
+>>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
 
 $teacherSaveError = '';
 $editingTeacherId = 0;
@@ -865,6 +876,7 @@ if (isset($_GET['edit_teacher'])) {
     </a>
   </aside>
   <div class="main-content">
+<<<<<<< HEAD
     <div class="global-term-container">
       <div class="filter-group">
         <label for="global-filter-year">
@@ -885,8 +897,35 @@ if (isset($_GET['edit_teacher'])) {
           <option value="1st Semester" <?= $selectedSem === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
           <option value="2nd Semester" <?= $selectedSem === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
         </select>
+=======
+    <form method="get" action="" style="margin-bottom:0;">
+      <input type="hidden" name="global_year" id="hidden-global-year" value="<?php echo htmlspecialchars($selectedYear); ?>">
+      <input type="hidden" name="global_sem" id="hidden-global-sem" value="<?php echo htmlspecialchars($selectedSem); ?>">
+      <div class="global-term-container">
+        <div class="filter-group">
+          <label for="global-filter-year">
+            <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
+            Academic Year:
+          </label>
+          <select id="global-filter-year" class="global-select" onchange="syncGlobalFilter()">
+            <option value="2025-2026" <?php echo $selectedYear==='2025-2026'?'selected':''; ?>>2025–2026</option>
+            <option value="2026-2027" <?php echo $selectedYear==='2026-2027'?'selected':''; ?>>2026–2027</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label for="global-filter-sem">
+            <i class="fa-solid fa-clock" aria-hidden="true"></i> Semester:
+          </label>
+          <select id="global-filter-sem" class="global-select" onchange="syncGlobalFilter()">
+            <option value="1st Semester" <?php echo $selectedSem==='1st Semester'?'selected':''; ?>>1st Semester</option>
+            <option value="2nd Semester" <?php echo $selectedSem==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
+            <option value="Summer" <?php echo $selectedSem==='Summer'?'selected':''; ?>>Summer</option>
+          </select>
+        </div>
+>>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
       </div>
-    </div>
+    </form>
 
     <div class="tab-content" style="display: block;">
       <h1 class="view-title">Teachers Management</h1>
@@ -985,7 +1024,11 @@ if (isset($_GET['edit_teacher'])) {
             <?php
             $conn = db_connect();
             if ($conn) {
-                $res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name, department FROM teachers ORDER BY last_name ASC, first_name ASC");
+                // Teachers registry is not term-scoped; show all teachers.
+$res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name, department FROM teachers ORDER BY last_name ASC, first_name ASC");
+                if ($res && $res->num_rows === 0) {
+                    $res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name, department FROM teachers ORDER BY last_name ASC, first_name ASC");
+                }
                 if ($res) {
                     if ($res->num_rows) {
                         while ($row = $res->fetch_assoc()) {
@@ -1003,7 +1046,7 @@ if (isset($_GET['edit_teacher'])) {
                             echo '</tr>';
                         }
                     } else {
-                        echo '<tr><td colspan="5" style="text-align:center;color:#6b7280;padding:18px;">No teachers found.</td></tr>';
+                        echo '<tr><td colspan="5" style="text-align:center;color:#6b7280;padding:18px;">No teachers found for the selected term.</td></tr>';
                     }
                 } else {
                     echo '<tr><td colspan="5" style="text-align:center;color:#6b7280;padding:18px;">Query error.</td></tr>';
@@ -1018,6 +1061,7 @@ if (isset($_GET['edit_teacher'])) {
         </div>
     </div>
   </div>
+<<<<<<< HEAD
 <script>
      // Variables
      const globalYearSelect = document.getElementById('global-filter-year');
@@ -1069,5 +1113,60 @@ if (isset($_GET['edit_teacher'])) {
        });
      });
    </script>
+=======
+  <script>
+    function syncGlobalFilter() {
+      const year = document.getElementById('global-filter-year').value;
+      const sem  = document.getElementById('global-filter-sem').value;
+      const url  = new URL(window.location);
+      url.searchParams.set('global_year', year);
+      url.searchParams.set('global_sem', sem);
+      url.searchParams.delete('school_year');
+      url.searchParams.delete('semester');
+      url.searchParams.delete('academic_year');
+      window.location.href = url.toString();
+    }
+
+    function openTeacherModal() {
+      document.getElementById('teacher-modal').style.display = 'flex';
+      document.getElementById('btn-add-teacher').style.display = 'none';
+    }
+    function closeTeacherModal() {
+      document.getElementById('teacher-modal').style.display = 'none';
+      document.getElementById('btn-add-teacher').style.display = 'inline-flex';
+      document.getElementById('teacher-form').reset();
+      document.getElementById('teacher-id-field').value = '';
+      document.getElementById('modal-title').textContent = 'Add Teacher';
+      const submitBtn = document.querySelector('#teacher-form button[type="submit"]');
+      submitBtn.name = 'add_teacher';
+      submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Teacher';
+    }
+    function togglePassword(id) {
+      const dots = document.getElementById('pwd-dots-' + id);
+      const text = document.getElementById('pwd-text-' + id);
+      const eye = document.getElementById('pwd-eye-' + id);
+      if (dots.style.display === 'none') {
+        dots.style.display = '';
+        text.style.display = 'none';
+        eye.className = 'fa-solid fa-eye';
+      } else {
+        dots.style.display = 'none';
+        text.style.display = '';
+        eye.className = 'fa-solid fa-eye-slash';
+      }
+    }
+    function filterTeachers(query) {
+      query = query.toLowerCase();
+      document.querySelectorAll('#teachers-table tbody tr').forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
+      });
+    }
+    document.querySelectorAll('.table-search-input').forEach(input => {
+      input.addEventListener('input', function() {
+        filterTeachers(this.value);
+      });
+    });
+  </script>
+>>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
 </body>
 </html>

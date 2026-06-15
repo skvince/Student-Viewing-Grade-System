@@ -336,6 +336,7 @@ function get_student_assigned_subjects(int $studentId, string $schoolYear = '', 
  * Get available school years and semesters from assignments/grades.
  */
 function get_available_terms(int $userId, string $role): array {
+<<<<<<< HEAD
     $conn = db_connect();
     if (!$conn) return ['years' => [], 'semesters' => []];
     $years = [];
@@ -359,6 +360,63 @@ function get_available_terms(int $userId, string $role): array {
     while ($r = $res->fetch_assoc()) {
         if (!empty($r['school_year']) && !in_array($r['school_year'], $years, true)) $years[] = $r['school_year'];
         if (!empty($r['semester']) && !in_array($r['semester'], $semesters, true)) $semesters[] = $r['semester'];
+=======
+    if ($role === 'teacher') {
+        $conn = db_connect();
+        if (!$conn) return ['years' => [], 'semesters' => []];
+        $stmt = $conn->prepare("SELECT DISTINCT school_year, semester FROM assignments WHERE teacher_id = ? ORDER BY school_year DESC, semester DESC");
+        $stmt->bind_param('i', $userId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+    } else {
+        $pairs = get_student_valid_terms($userId);
+        $res = null;
+    }
+
+    $years = [];
+    $semesters = [];
+    if ($res) {
+        while ($r = $res->fetch_assoc()) {
+            if (!in_array($r['school_year'], $years, true)) $years[] = $r['school_year'];
+            if (!in_array($r['semester'], $semesters, true)) $semesters[] = $r['semester'];
+        }
+        $res->free();
+        $stmt->close();
+        $conn->close();
+    } elseif (isset($pairs)) {
+        foreach ($pairs as $pair) {
+            if (!in_array($pair['year'], $years, true)) $years[] = $pair['year'];
+            if (!in_array($pair['semester'], $semesters, true)) $semesters[] = $pair['semester'];
+        }
+    }
+
+    return ['years' => $years, 'semesters' => $semesters];
+}
+
+function get_student_valid_terms(int $userId): array {
+    $conn = db_connect();
+    if (!$conn) return [];
+
+    $stmt = $conn->prepare("
+        SELECT DISTINCT a.school_year, a.semester
+        FROM assignments a
+        LEFT JOIN students s ON s.section_id = a.section_id
+        WHERE s.id = ?
+        UNION
+        SELECT DISTINCT g.school_year, g.semester
+        FROM grades g
+        WHERE g.student_id = ?
+        ORDER BY school_year DESC, semester DESC
+    ");
+    if (!$stmt) { $conn->close(); return []; }
+
+    $stmt->bind_param('ii', $userId, $userId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $pairs = [];
+    while ($r = $res->fetch_assoc()) {
+        $pairs[] = ['year' => $r['school_year'], 'semester' => $r['semester']];
+>>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
     }
     // Order semesters: 1st Semester first, then 2nd Semester
     $semesterOrder = ['1st Semester', '2nd Semester'];
@@ -371,8 +429,127 @@ function get_available_terms(int $userId, string $role): array {
     });
     $stmt->close();
     $conn->close();
-    return ['years' => $years, 'semesters' => $semesters];
+    return $pairs;
 }
+
+function get_semesters_for_year(array $pairs, string $year): array {
+    $semesterOrder = ['1st Semester', '2nd Semester', 'Summer'];
+    $semesters = [];
+    foreach ($semesterOrder as $semester) {
+        foreach ($pairs as $pair) {
+            if (($pair['year'] ?? '') === $year && ($pair['semester'] ?? '') === $semester && !in_array($semester, $semesters, true)) {
+                $semesters[] = $semester;
+            }
+        }
+    }
+    foreach ($pairs as $pair) {
+        if (($pair['year'] ?? '') === $year && !in_array($pair['semester'] ?? '', $semesters, true)) {
+            $semesters[] = $pair['semester'];
+        }
+    }
+    return $semesters;
+}
+
+function get_first_available_student_term(array $pairs, string $preferredYear): ?array {
+    $semesterOrder = ['1st Semester', '2nd Semester', 'Summer'];
+    $yearPairs = array_values(array_filter($pairs, fn($pair) => ($pair['year'] ?? '') === $preferredYear));
+    $candidates = $yearPairs ?: $pairs;
+
+    usort($candidates, function ($a, $b) use ($semesterOrder) {
+        $yearCompare = strcmp($b['year'] ?? '', $a['year'] ?? '');
+        if ($yearCompare !== 0) return $yearCompare;
+
+        $rankA = array_search($a['semester'] ?? '', $semesterOrder, true);
+        $rankB = array_search($b['semester'] ?? '', $semesterOrder, true);
+        $rankA = $rankA === false ? 999 : $rankA;
+        $rankB = $rankB === false ? 999 : $rankB;
+        return $rankA <=> $rankB;
+    });
+
+    foreach ($semesterOrder as $semester) {
+        foreach ($candidates as $pair) {
+            if (($pair['semester'] ?? '') === $semester) return $pair;
+        }
+    }
+
+    return $candidates[0] ?? null;
+}
+
+
+function get_term_options(): array {
+    return [
+        'years' => ['2025-2026', '2026-2027'],
+        'semesters' => ['1st Semester', '2nd Semester', 'Summer'],
+    ];
+}
+
+function normalize_school_year($year): string {
+    $year = is_string($year) ? trim($year) : '';
+    $year = str_replace(['–', '—'], '-', $year);
+    return preg_match('/^\d{4}-\d{4}$/', $year) ? $year : '';
+}
+
+function normalize_semester($semester): string {
+    $semester = is_string($semester) ? trim($semester) : '';
+    $semester = preg_replace('/\s+/', ' ', $semester);
+
+    if ($semester === '') return '';
+
+    $lower = strtolower($semester);
+    if (in_array($lower, ['1', '1st', '1st sem', '1st semester', 'first', 'first semester'], true)) return '1st Semester';
+    if (in_array($lower, ['2', '2nd', '2nd sem', '2nd semester', 'second', 'second semester'], true)) return '2nd Semester';
+    if (in_array($lower, ['summer', 'summer term', '3rd', '3rd semester'], true)) return 'Summer';
+
+    if (preg_match('/\b1(?:st)?\b/', $lower)) return '1st Semester';
+    if (preg_match('/\b2(?:nd)?\b/', $lower)) return '2nd Semester';
+    if (preg_match('/sum/i', $lower)) return 'Summer';
+
+    return $semester;
+}
+
+/**
+ * Global filter helper: resolves selected school year + semester from GET/session
+ * and normalizes values to reduce “mixing” across terms.
+ */
+function get_global_term(): array {
+    $options = get_term_options();
+    $yearCandidates = array_filter([
+        $_GET['global_year'] ?? '',
+        $_SESSION['global_year'] ?? '',
+        $_GET['school_year'] ?? '',
+        $_GET['academic_year'] ?? '',
+        $_SESSION['teacher_sy'] ?? '',
+        $_SESSION['student_filter_year'] ?? '',
+    ], fn($v) => normalize_school_year($v) !== '');
+
+    $semCandidates = array_filter([
+        $_GET['global_sem'] ?? '',
+        $_GET['global_semester'] ?? '',
+        $_SESSION['global_sem'] ?? '',
+        $_GET['semester'] ?? '',
+        $_SESSION['teacher_sem'] ?? '',
+        $_SESSION['student_filter_sem'] ?? '',
+    ], fn($v) => normalize_semester($v) !== '');
+
+    $year = normalize_school_year(reset($yearCandidates));
+    $sem  = normalize_semester(reset($semCandidates));
+
+    if (!in_array($year, $options['years'], true)) $year = $options['years'][0] ?? '2025-2026';
+    if (!in_array($sem, $options['semesters'], true)) $sem = $options['semesters'][0] ?? '1st Semester';
+
+    $_SESSION['global_year'] = $year;
+    $_SESSION['global_sem']  = $sem;
+    $_SESSION['teacher_sy']  = $year;
+    $_SESSION['teacher_sem'] = $sem;
+    $_SESSION['student_filter_year'] = $year;
+    $_SESSION['student_filter_sem']  = $sem;
+
+    return ['year' => $year, 'semester' => $sem];
+}
+
+
+
+
 
 /**
  * Create teacher account with auto-generated password.

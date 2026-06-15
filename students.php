@@ -2,6 +2,7 @@
 <?php
 ob_start();
 session_start();
+<<<<<<< HEAD
 $selectedYear = $_GET['school_year'] ?? null;
 $selectedSem = $_GET['semester'] ?? null;
 
@@ -20,6 +21,32 @@ if ($conn) {
     if ($res) {
         while ($row = $res->fetch_assoc()) $departments[] = $row;
         $res->free();
+=======
+$term = get_global_term();
+$selectedYear = $term['year'];
+$selectedSem  = $term['semester'];
+$studentSaveError = '';
+    $submittedFirstName = '';
+    $submittedMiddleName = '';
+    $submittedLastName = '';
+    $submittedSectionId = 0;
+    $submittedDepartment = '';
+    $sections = [];
+    $departments = [];
+
+    $conn = db_connect();
+    if ($conn) {
+      $escapedYear = $conn->real_escape_string($selectedYear);
+      $escapedSem  = $conn->real_escape_string($selectedSem);
+      $sectionRes = $conn->query("SELECT id, section_code, name FROM sections WHERE school_year = '" . $escapedYear . "' AND semester = '" . $escapedSem . "' ORDER BY name ASC");
+      if ($sectionRes) {
+        while ($row = $sectionRes->fetch_assoc()) {
+          $sections[] = $row;
+        }
+        $sectionRes->free();
+      }
+      $conn->close();
+>>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
     }
 
     // Auto-detect year/sem from sections if not set
@@ -93,10 +120,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_student'])) {
     }
 }
 
+<<<<<<< HEAD
 $conn = db_connect();
 if ($conn) {
     $sectionRes = $conn->query("SELECT id, section_code, name, school_year, semester FROM sections ORDER BY name ASC");
     if ($sectionRes) {
+=======
+    $conn = db_connect();
+    if ($conn) {
+      $escapedYear = $conn->real_escape_string($selectedYear);
+      $escapedSem  = $conn->real_escape_string($selectedSem);
+      $sectionRes = $conn->query("SELECT id, section_code, name FROM sections WHERE school_year = '" . $escapedYear . "' AND semester = '" . $escapedSem . "' ORDER BY name ASC");
+      if ($sectionRes) {
+>>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
         while ($row = $sectionRes->fetch_assoc()) {
             $sections[] = $row;
         }
@@ -917,9 +953,15 @@ $conn->close();
               <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
               Academic Year:
             </label>
+<<<<<<< HEAD
             <select id="global-filter-year" class="global-select">
               <option value="2025-2026" <?= $selectedYear === '2025-2026' ? 'selected' : '' ?>>2025–2026</option>
               <option value="2024-2025" <?= $selectedYear === '2024-2025' ? 'selected' : '' ?>>2024–2025</option>
+=======
+            <select id="global-filter-year" class="global-select" onchange="syncGlobalFilter()">
+              <option value="2025-2026" <?php echo $selectedYear==='2025-2026'?'selected':''; ?>>2025–2026</option>
+              <option value="2026-2027" <?php echo $selectedYear==='2026-2027'?'selected':''; ?>>2026–2027</option>
+>>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
             </select>
           </div>
 
@@ -927,10 +969,18 @@ $conn->close();
             <label for="global-filter-sem">
               <i class="fa-solid fa-clock" aria-hidden="true"></i> Semester:
             </label>
+<<<<<<< HEAD
             <select id="global-filter-sem" class="global-select">
               <option value="1st Semester" <?= $selectedSem === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
               <option value="2nd Semester" <?= $selectedSem === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
             </select>
+=======
+              <select id="global-filter-sem" class="global-select" onchange="syncGlobalFilter()">
+                <option value="1st Semester" <?php echo $selectedSem==='1st Semester'?'selected':''; ?>>1st Semester</option>
+                <option value="2nd Semester" <?php echo $selectedSem==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
+                <option value="Summer" <?php echo $selectedSem==='Summer'?'selected':''; ?>>Summer</option>
+              </select>
+>>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
           </div>
         </div>
 
@@ -1042,6 +1092,9 @@ $conn->close();
             <?php
             $conn = db_connect();
             if ($conn) {
+                $escapedYear = $conn->real_escape_string($selectedYear);
+                $escapedSem  = $conn->real_escape_string($selectedSem);
+// Keep students registry term-agnostic (global filter should not hide CRUD rows)
                 $res = $conn->query(
                     "SELECT s.id, s.student_id, s.first_name, s.middle_name, s.last_name, s.section_id, s.department, sec.name AS section_name, sec.section_code " .
                     "FROM students s " .
@@ -1090,11 +1143,47 @@ $conn->close();
           const globalYearSelect = document.getElementById('global-filter-year');
           const globalSemSelect = document.getElementById('global-filter-sem');
 
+<<<<<<< HEAD
           // Handlers
           function handleYearChange() {
             const url = new URL(window.location);
             url.searchParams.set('school_year', this.value);
             window.location = url;
+=======
+        function syncGlobalFilter() {
+          const year = document.getElementById('global-filter-year').value;
+          const sem  = document.getElementById('global-filter-sem').value;
+          const url  = new URL(window.location);
+          url.searchParams.set('global_year', year);
+          url.searchParams.set('global_sem', sem);
+          url.searchParams.delete('school_year');
+          url.searchParams.delete('semester');
+          url.searchParams.delete('academic_year');
+          window.location.href = url.toString();
+        }
+
+        function resetForm() {
+          document.getElementById('student-id-field').value = '';
+          document.getElementById('student-form').reset();
+          document.getElementById('form-title').textContent = 'Add Student';
+          document.getElementById('form-subtitle').textContent = 'Enter the student details below.';
+          document.getElementById('submit-btn').name = 'add_student';
+          document.getElementById('submit-btn').textContent = 'Register';
+        }
+
+        function togglePassword(id) {
+          const dots = document.getElementById('pwd-dots-' + id);
+          const text = document.getElementById('pwd-text-' + id);
+          const eye = document.getElementById('pwd-eye-' + id);
+          if (dots.style.display === 'none') {
+            dots.style.display = '';
+            text.style.display = 'none';
+            eye.className = 'fa-solid fa-eye';
+          } else {
+            dots.style.display = 'none';
+            text.style.display = '';
+            eye.className = 'fa-solid fa-eye-slash';
+>>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
           }
 
           function handleSemChange() {
