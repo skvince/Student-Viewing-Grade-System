@@ -1,27 +1,7 @@
-<?php require_once __DIR__ . '/inc/functions.php'; ?>
+  <?php require_once __DIR__ . '/inc/functions.php'; ?>
 <?php
 ob_start();
 session_start();
-<<<<<<< HEAD
-$selectedYear = $_GET['school_year'] ?? null;
-$selectedSem = $_GET['semester'] ?? null;
-
-$studentSaveError = '';
-$submittedFirstName = '';
-$submittedMiddleName = '';
-$submittedLastName = '';
-$submittedSectionId = 0;
-$submittedDepartment = '';
-$sections = [];
-$departments = [];
-
-$conn = db_connect();
-if ($conn) {
-    $res = $conn->query("SELECT id, name FROM departments ORDER BY name ASC");
-    if ($res) {
-        while ($row = $res->fetch_assoc()) $departments[] = $row;
-        $res->free();
-=======
 $term = get_global_term();
 $selectedYear = $term['year'];
 $selectedSem  = $term['semester'];
@@ -33,12 +13,16 @@ $studentSaveError = '';
     $submittedDepartment = '';
     $sections = [];
     $departments = [];
+    $editingStudentId = 0;
+    $editingStudentData = [];
+
+    $departments = get_departments();
 
     $conn = db_connect();
     if ($conn) {
       $escapedYear = $conn->real_escape_string($selectedYear);
       $escapedSem  = $conn->real_escape_string($selectedSem);
-      $sectionRes = $conn->query("SELECT id, section_code, name FROM sections WHERE school_year = '" . $escapedYear . "' AND semester = '" . $escapedSem . "' ORDER BY name ASC");
+      $sectionRes = $conn->query("SELECT id, name AS section_code, name FROM sections WHERE school_year = '" . $escapedYear . "' AND semester = '" . $escapedSem . "' ORDER BY name ASC");
       if ($sectionRes) {
         while ($row = $sectionRes->fetch_assoc()) {
           $sections[] = $row;
@@ -46,103 +30,100 @@ $studentSaveError = '';
         $sectionRes->free();
       }
       $conn->close();
->>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
     }
 
-    // Auto-detect year/sem from sections if not set
-    if (!$selectedYear) {
-        $res = $conn->query("SELECT school_year, semester FROM sections WHERE school_year IS NOT NULL AND semester IS NOT NULL ORDER BY created_at DESC LIMIT 1");
-        if ($res && $row = $res->fetch_assoc()) {
-            $selectedYear = $row['school_year'];
-            $selectedSem = $row['semester'];
-        }
-        if ($res) $res->free();
-    }
-    $conn->close();
-}
-if (!$selectedYear) $selectedYear = '2025-2026';
-if (!$selectedSem) $selectedSem = '1st Semester';
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_student'])) {
-    $studentIdToDelete = intval($_POST['student_id'] ?? 0);
-    if ($studentIdToDelete) {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_student'])) {
+      $studentIdToDelete = intval($_POST['student_id'] ?? 0);
+      if ($studentIdToDelete) {
         delete_student($studentIdToDelete);
         audit_log('delete_student');
+      }
+      header('Location: ' . $_SERVER['PHP_SELF']);
+      exit;
     }
-    header('Location: ' . $_SERVER['PHP_SELF']);
-    exit;
-}
 
-// Handle update student form submission
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
-    $studentId = intval($_POST['student_id'] ?? 0);
-    $firstName = trim($_POST['first_name'] ?? '');
-    $middleName = trim($_POST['middle_name'] ?? '');
-    $lastName = trim($_POST['last_name'] ?? '');
-    $submittedSectionId = intval($_POST['section_id'] ?? 0);
-    $submittedDepartment = trim($_POST['department'] ?? '');
+    // Handle update student form submission
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
+      $studentId = intval($_POST['student_id'] ?? 0);
+      $firstName = trim($_POST['first_name'] ?? '');
+      $middleName = trim($_POST['middle_name'] ?? '');
+      $lastName = trim($_POST['last_name'] ?? '');
+      $submittedSectionId = intval($_POST['section_id'] ?? 0);
+      $submittedDepartment = trim($_POST['department'] ?? '');
 
-    if (!$studentId || !$firstName || !$lastName) {
+      if (!$studentId || !$firstName || !$lastName) {
         $studentSaveError = 'First name and last name are required.';
-    } else {
+      } else {
         $ok = update_student($studentId, $firstName, $middleName, $lastName, $submittedSectionId ?: null, $submittedDepartment ?: null, null);
         if ($ok) {
-            audit_log('update_student');
-            header('Location: ' . $_SERVER['PHP_SELF']);
-            exit;
+          audit_log('update_student');
+          header('Location: ' . $_SERVER['PHP_SELF']);
+          exit;
         } else {
-            $studentSaveError = 'Student update failed.';
+          $studentSaveError = 'Student update failed.';
         }
+      }
     }
-}
 
-// Handle add student form submission
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_student'])) {
-    $firstName = trim($_POST['first_name'] ?? '');
-    $middleName = trim($_POST['middle_name'] ?? '');
-    $lastName = trim($_POST['last_name'] ?? '');
-    $submittedSectionId = intval($_POST['section_id'] ?? 0);
-    $submittedDepartment = trim($_POST['department'] ?? '');
-    $submittedFirstName = $firstName;
-    $submittedMiddleName = $middleName;
-    $submittedLastName = $lastName;
+    // Handle add student form submission
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_student'])) {
+      $firstName = trim($_POST['first_name'] ?? '');
+      $middleName = trim($_POST['middle_name'] ?? '');
+      $lastName = trim($_POST['last_name'] ?? '');
+      $submittedSectionId = intval($_POST['section_id'] ?? 0);
+      $submittedDepartment = trim($_POST['department'] ?? '');
+      $submittedFirstName = $firstName;
+      $submittedMiddleName = $middleName;
+      $submittedLastName = $lastName;
 
-    if (! $firstName || ! $lastName) {
+      if (! $firstName || ! $lastName) {
         $studentSaveError = 'First name and last name are required.';
-    } else {
+      } else {
         $result = create_student($firstName, $middleName, $lastName, $submittedSectionId ?: null, $submittedDepartment ?: null);
         if ($result['success']) {
             audit_log('create_student');
-            $studentSaveError = 'Student registered successfully! ID: ' . $result['student_id'] . ' | Password: ' . $result['password'];
+            header('Location: ' . $_SERVER['PHP_SELF']);
+            exit;
         } else {
-            $studentSaveError = $result['error'];
+          $studentSaveError = $result['error'];
         }
+      }
     }
-}
 
-<<<<<<< HEAD
-$conn = db_connect();
-if ($conn) {
-    $sectionRes = $conn->query("SELECT id, section_code, name, school_year, semester FROM sections ORDER BY name ASC");
-    if ($sectionRes) {
-=======
-    $conn = db_connect();
-    if ($conn) {
-      $escapedYear = $conn->real_escape_string($selectedYear);
-      $escapedSem  = $conn->real_escape_string($selectedSem);
-      $sectionRes = $conn->query("SELECT id, section_code, name FROM sections WHERE school_year = '" . $escapedYear . "' AND semester = '" . $escapedSem . "' ORDER BY name ASC");
-      if ($sectionRes) {
->>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
-        while ($row = $sectionRes->fetch_assoc()) {
-            $sections[] = $row;
+    if (isset($_GET['edit_student'])) {
+      $editingStudentId = intval($_GET['edit_student']);
+      $conn = db_connect();
+      if ($conn) {
+        $stmt = $conn->prepare(
+          'SELECT s.id, s.first_name, s.middle_name, s.last_name, s.section_id, s.department,
+                  sec.name AS section_code, sec.name AS section_name
+           FROM students s
+           LEFT JOIN sections sec ON s.section_id = sec.id
+           WHERE s.id = ?
+           LIMIT 1'
+        );
+        if ($stmt) {
+          $stmt->bind_param('i', $editingStudentId);
+          $stmt->execute();
+          $res = $stmt->get_result();
+          if ($res && $row = $res->fetch_assoc()) $editingStudentData = $row;
+          $stmt->close();
         }
-        $sectionRes->free();
+        $conn->close();
+      }
     }
-$conn->close();
-}
-?>
-<!doctype html>
-<html lang="en">
+
+
+    $formFirstName = $editingStudentData['first_name'] ?? $submittedFirstName ?? '';
+    $formMiddleName = $editingStudentData['middle_name'] ?? $submittedMiddleName ?? '';
+    $formLastName = $editingStudentData['last_name'] ?? $submittedLastName ?? '';
+    $formDepartment = $editingStudentData['department'] ?? $submittedDepartment ?? '';
+    $formSectionId = intval($editingStudentData['section_id'] ?? $submittedSectionId ?? 0);
+    $isEditingStudent = (bool) $editingStudentData;
+
+    ?>
+    <!doctype html>
+    <html lang="en">
 
     <head>
       <meta charset="UTF-8" />
@@ -953,15 +934,9 @@ $conn->close();
               <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
               Academic Year:
             </label>
-<<<<<<< HEAD
-            <select id="global-filter-year" class="global-select">
-              <option value="2025-2026" <?= $selectedYear === '2025-2026' ? 'selected' : '' ?>>2025–2026</option>
-              <option value="2024-2025" <?= $selectedYear === '2024-2025' ? 'selected' : '' ?>>2024–2025</option>
-=======
             <select id="global-filter-year" class="global-select" onchange="syncGlobalFilter()">
               <option value="2025-2026" <?php echo $selectedYear==='2025-2026'?'selected':''; ?>>2025–2026</option>
               <option value="2026-2027" <?php echo $selectedYear==='2026-2027'?'selected':''; ?>>2026–2027</option>
->>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
             </select>
           </div>
 
@@ -969,18 +944,11 @@ $conn->close();
             <label for="global-filter-sem">
               <i class="fa-solid fa-clock" aria-hidden="true"></i> Semester:
             </label>
-<<<<<<< HEAD
-            <select id="global-filter-sem" class="global-select">
-              <option value="1st Semester" <?= $selectedSem === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
-              <option value="2nd Semester" <?= $selectedSem === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
-            </select>
-=======
               <select id="global-filter-sem" class="global-select" onchange="syncGlobalFilter()">
                 <option value="1st Semester" <?php echo $selectedSem==='1st Semester'?'selected':''; ?>>1st Semester</option>
                 <option value="2nd Semester" <?php echo $selectedSem==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
                 <option value="Summer" <?php echo $selectedSem==='Summer'?'selected':''; ?>>Summer</option>
               </select>
->>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
           </div>
         </div>
 
@@ -1015,12 +983,12 @@ $conn->close();
                         border: 1px solid #ccc;
                       " />
                 </div>
-                <button type="button" id="btn-add-student" class="btn-add" onclick="var m=document.getElementById('modal-backdrop'); if (!m) return; m.style.display='flex'; this.style.display='none';">
+                <button type="button" id="btn-add-student" class="btn-add" onclick="var m=document.getElementById('modal-backdrop'); if (!m) return; m.style.display='flex'; this.style.display='none';" style="<?php echo $isEditingStudent ? 'display:none;' : ''; ?>">
                   <i class="fa-solid fa-plus"></i> Add Student
                 </button>
               </div>
             </div>
-            <div id="modal-backdrop" class="modal-backdrop" style="display:none;">
+              <div id="modal-backdrop" class="modal-backdrop" style="<?php echo $isEditingStudent ? 'display:flex;' : 'display:none;'; ?>">
               <div id="modal-card" class="student-form-card">
                 <button type="button" class="student-form-close" onclick="document.getElementById('modal-backdrop').style.display='none'; document.getElementById('btn-add-student').style.display='inline-flex';">
                   <i class="fa-solid fa-xmark"></i>
@@ -1033,19 +1001,19 @@ $conn->close();
                    <p id="form-subtitle">Enter the student details below.</p>
                  </div>
                  <form method="post" id="student-form">
-                   <input type="hidden" name="student_id" id="student-id-field" value="">
+                   <input type="hidden" name="student_id" id="student-id-field" value="<?php echo intval($editingStudentData['id'] ?? 0); ?>">
                    <div class="grid-3col">
                      <div class="form-group">
                        <label for="first_name">First Name</label>
-                       <input type="text" id="first_name" name="first_name" class="form-control" required placeholder="First name" value="<?php echo htmlspecialchars($submittedFirstName ?? ''); ?>" />
+                       <input type="text" id="first_name" name="first_name" class="form-control" required placeholder="First name" value="<?php echo htmlspecialchars($formFirstName); ?>" />
                      </div>
                      <div class="form-group">
                        <label for="middle_name">Middle Name</label>
-                       <input type="text" id="middle_name" name="middle_name" class="form-control" placeholder="Middle name" value="<?php echo htmlspecialchars($submittedMiddleName ?? ''); ?>" />
+                       <input type="text" id="middle_name" name="middle_name" class="form-control" placeholder="Middle name" value="<?php echo htmlspecialchars($formMiddleName); ?>" />
                      </div>
                      <div class="form-group">
                        <label for="last_name">Last Name</label>
-                       <input type="text" id="last_name" name="last_name" class="form-control" required placeholder="Last name" value="<?php echo htmlspecialchars($submittedLastName ?? ''); ?>" />
+                       <input type="text" id="last_name" name="last_name" class="form-control" required placeholder="Last name" value="<?php echo htmlspecialchars($formLastName); ?>" />
                      </div>
                    </div>
                    <div class="form-group">
@@ -1053,7 +1021,7 @@ $conn->close();
                      <select id="department" name="department" class="form-control">
                        <option value="">Select department...</option>
                        <?php foreach ($departments as $dept): ?>
-                         <option value="<?php echo htmlspecialchars($dept['name']); ?>" <?php echo ($submittedDepartment ?? '') === $dept['name'] ? 'selected' : ''; ?>>
+                          <option value="<?php echo htmlspecialchars($dept['name']); ?>" <?php echo $formDepartment === $dept['name'] ? 'selected' : ''; ?>>
                            <?php echo htmlspecialchars($dept['name']); ?>
                          </option>
                        <?php endforeach; ?>
@@ -1061,13 +1029,27 @@ $conn->close();
                    </div>
                    <div class="form-group">
                      <label for="section_id">Section</label>
-                     <select name="section_id" id="section_id" class="form-control">
+                     <select name="section_id" id="section_id" class="form-control" required>
                        <option value="" selected>Select section...</option>
+
     <?php foreach ($sections as $sectionOption): ?>
-                       <option value="<?php echo htmlspecialchars($sectionOption['id']); ?>"<?php echo $submittedSectionId == $sectionOption['id'] ? ' selected' : ''; ?>>
-                         <?php echo htmlspecialchars($sectionOption['section_code'] . ' - ' . $sectionOption['name']); ?>
+                       <option value="<?php echo htmlspecialchars($sectionOption['id']); ?>"<?php echo $formSectionId == $sectionOption['id'] ? ' selected' : ''; ?>>
+                          <?php echo htmlspecialchars($sectionOption['name']); ?>
                        </option>
     <?php endforeach; ?>
+
+    <?php if ($isEditingStudent && $formSectionId && !empty($editingStudentData['section_code']) && !empty($editingStudentData['section_name'])): ?>
+      <?php $alreadyInList = false; ?>
+      <?php foreach ($sections as $sectionOptionCheck): ?>
+        <?php if (intval($sectionOptionCheck['id']) === intval($formSectionId)) { $alreadyInList = true; break; } ?>
+      <?php endforeach; ?>
+      <?php if (!$alreadyInList): ?>
+        <option value="<?php echo htmlspecialchars($formSectionId); ?>" selected>
+          <?php echo htmlspecialchars($editingStudentData['section_name']); ?>
+        </option>
+      <?php endif; ?>
+    <?php endif; ?>
+
                      </select>
                    </div>
                    <div class="form-buttons-row card-action-row">
@@ -1091,7 +1073,7 @@ $conn->close();
             <tbody>
             <?php
             $conn = db_connect();
-            if ($conn) {
+    if ($conn) {
                 $escapedYear = $conn->real_escape_string($selectedYear);
                 $escapedSem  = $conn->real_escape_string($selectedSem);
 // Keep students registry term-agnostic (global filter should not hide CRUD rows)
@@ -1099,8 +1081,6 @@ $conn->close();
                     "SELECT s.id, s.student_id, s.first_name, s.middle_name, s.last_name, s.section_id, s.department, sec.name AS section_name, sec.section_code " .
                     "FROM students s " .
                     "LEFT JOIN sections sec ON s.section_id = sec.id " .
-                    "WHERE sec.school_year = '" . $conn->real_escape_string($selectedYear) . "' " .
-                    "AND sec.semester = '" . $conn->real_escape_string($selectedSem) . "' " .
                     "ORDER BY s.last_name ASC, s.first_name ASC"
                 );
                 if ($res) {
@@ -1112,7 +1092,7 @@ $conn->close();
                             echo '<td>' . htmlspecialchars($row['student_id'] ?? ('S-' . sprintf('%03d', $row['id']))) . '</td>';
                             echo '<td>' . $fullName . '</td>';
                             echo '<td>' . htmlspecialchars($row['department'] ?? '') . '</td>';
-                            $sectionDisplay = trim(($row['section_code'] ? $row['section_code'] . ' - ' : '') . ($row['section_name'] ?? ''));
+                            $sectionDisplay = trim($row['section_name'] ?? '');
                             echo '<td>' . htmlspecialchars($sectionDisplay) . '</td>';
                             echo '<td><div class="password-cell"><span class="password-dots" id="pwd-dots-' . intval($row['id']) . '">••••••••</span><span class="password-text" id="pwd-text-' . intval($row['id']) . '" style="display:none;">' . $passwordHint . '</span><button type="button" class="icon-button" onclick="togglePassword(' . intval($row['id']) . ')" title="Show/Hide password"><i class="fa-solid fa-eye" id="pwd-eye-' . intval($row['id']) . '"></i></button></div></td>';
                             echo '<td class="actions-cell">';
@@ -1138,18 +1118,22 @@ $conn->close();
           </div>
         </div>
       </div>
-<script>
-          // Variables
-          const globalYearSelect = document.getElementById('global-filter-year');
-          const globalSemSelect = document.getElementById('global-filter-sem');
+      <script>
+        function editStudent(id, firstName, middleName, lastName, department, sectionId) {
+          document.getElementById('student-id-field').value = id;
+          document.getElementById('first_name').value = firstName;
+          document.getElementById('middle_name').value = middleName;
+          document.getElementById('last_name').value = lastName;
+          document.getElementById('department').value = department || '';
+          document.getElementById('section_id').value = sectionId || '';
+          document.getElementById('form-title').textContent = 'Edit Student';
+          document.getElementById('form-subtitle').textContent = 'Update the student details below.';
+          document.getElementById('submit-btn').name = 'update_student';
+          document.getElementById('submit-btn').textContent = 'Update Student';
+          document.getElementById('modal-backdrop').style.display = 'flex';
+          document.getElementById('btn-add-student').style.display = 'none';
+        }
 
-<<<<<<< HEAD
-          // Handlers
-          function handleYearChange() {
-            const url = new URL(window.location);
-            url.searchParams.set('school_year', this.value);
-            window.location = url;
-=======
         function syncGlobalFilter() {
           const year = document.getElementById('global-filter-year').value;
           const sem  = document.getElementById('global-filter-sem').value;
@@ -1183,78 +1167,35 @@ $conn->close();
             dots.style.display = 'none';
             text.style.display = '';
             eye.className = 'fa-solid fa-eye-slash';
->>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
           }
+        }
 
-          function handleSemChange() {
-            const url = new URL(window.location);
-            url.searchParams.set('semester', this.value);
-            window.location = url;
-          }
+        function deleteStudent(id) {
+          const form = document.createElement('form');
+          form.method = 'POST';
+          form.innerHTML = '<input type="hidden" name="delete_student" value="1"><input type="hidden" name="student_id" value="' + id + '">';
+          document.body.appendChild(form);
+          form.submit();
+        }
 
-          function editStudent(id, firstName, middleName, lastName, department, sectionId) {
-            document.getElementById('student-id-field').value = id;
-            document.getElementById('first_name').value = firstName;
-            document.getElementById('middle_name').value = middleName;
-            document.getElementById('last_name').value = lastName;
-            document.getElementById('department').value = department || '';
-            document.getElementById('section_id').value = sectionId || '';
-            document.getElementById('form-title').textContent = 'Edit Student';
-            document.getElementById('form-subtitle').textContent = 'Update the student details below.';
-            document.getElementById('submit-btn').name = 'update_student';
-            document.getElementById('submit-btn').textContent = 'Update Student';
-            document.getElementById('modal-backdrop').style.display = 'flex';
-            document.getElementById('btn-add-student').style.display = 'none';
-          }
-
-          function resetForm() {
-            document.getElementById('student-id-field').value = '';
-            document.getElementById('student-form').reset();
-            document.getElementById('form-title').textContent = 'Add Student';
-            document.getElementById('form-subtitle').textContent = 'Enter the student details below.';
-            document.getElementById('submit-btn').name = 'add_student';
-            document.getElementById('submit-btn').textContent = 'Register';
-          }
-
-          function togglePassword(id) {
-            const dots = document.getElementById('pwd-dots-' + id);
-            const text = document.getElementById('pwd-text-' + id);
-            const eye = document.getElementById('pwd-eye-' + id);
-            if (dots.style.display === 'none') {
-              dots.style.display = '';
-              text.style.display = 'none';
-              eye.className = 'fa-solid fa-eye';
-            } else {
-              dots.style.display = 'none';
-              text.style.display = '';
-              eye.className = 'fa-solid fa-eye-slash';
-            }
-          }
-
-          function deleteStudent(id) {
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.innerHTML = '<input type="hidden" name="delete_student" value="1"><input type="hidden" name="student_id" value="' + id + '">';
-            document.body.appendChild(form);
-            form.submit();
-          }
-
-          function filterStudents() {
+        document.querySelectorAll('.table-search-input').forEach(input => {
+          input.addEventListener('input', function() {
             const query = this.value.toLowerCase();
             document.querySelectorAll('#students-table tbody tr').forEach(row => {
               row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
             });
-          }
-
-          // Listeners
-          document.addEventListener('DOMContentLoaded', function () {
-            globalYearSelect?.addEventListener('change', handleYearChange);
-            globalSemSelect?.addEventListener('change', handleSemChange);
-            document.querySelectorAll('.table-search-input').forEach(input => {
-              input.addEventListener('input', filterStudents);
-            });
-            document.getElementById('btn-add-student').addEventListener('click', resetForm);
           });
-        </script>
+        });
+
+        // Reset form when closing modal
+        document.getElementById('btn-add-student').addEventListener('click', resetForm);
+
+        if (document.getElementById('student-id-field').value) {
+          document.getElementById('form-title').textContent = 'Edit Student';
+          document.getElementById('form-subtitle').textContent = 'Update the student details below.';
+          document.getElementById('submit-btn').name = 'update_student';
+          document.getElementById('submit-btn').textContent = 'Update Student';
+        }
+      </script>
     </body>
     </html>

@@ -45,12 +45,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CSCQC Portal</title>
-    <link rel="icon" type="image/png" href="https://cscqcph.com/images/bg/cscqc.png"/>
+    <link rel="icon" type="image/png" href="https://cscqcph.com/images/bg/cscqc.png">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; }
       body { background: #f5f5f5; min-height: 100vh; }
-      main { display: flex; min-height: 100vh; }
+      
+      main { display: flex; flex-direction: row-reverse; min-height: 100vh; }
+      
       section.login-section { width: 50%; display: flex; justify-content: center; align-items: center; background: #f5f5f5; }
       article.login-box { width: 450px; }
       header.title { display: flex; align-items: center; gap: 15px; margin-bottom: 50px; }
@@ -65,8 +67,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       aside { width: 50%; background: #124b2f; color: white; display: flex; justify-content: center; align-items: center; text-align: center; }
       .right-content h2 { font-size: 90px; line-height: 1.1; font-family: Georgia, "Times New Roman", Times, serif; margin-bottom: 40px; }
       .right-content p { font-size: 24px; color: #d5d5d5; }
+      
       @media (max-width: 900px) {
-        main { flex-direction: column; }
+        main { flex-direction: column-reverse; }
         section.login-section, aside { width: 100%; min-height: 50vh; padding: 40px 20px; }
         .right-content h2 { font-size: 50px; }
         .title h1 { font-size: 40px; }

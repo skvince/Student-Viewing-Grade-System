@@ -119,11 +119,16 @@ function authenticate_user(string $username, string $password): ?array {
  * Get teacher's assigned sections with subjects for a given school_year and semester.
  */
 function get_teacher_assignments(int $teacherId, string $schoolYear, string $semester): array {
+    // Normalize to match storage and portal filtering.
+    $schoolYear = normalize_school_year($schoolYear);
+    $semester   = normalize_semester($semester);
+
     $conn = db_connect();
     if (!$conn) return [];
     $stmt = $conn->prepare("
+
         SELECT a.id as assignment_id, a.section_id, a.subject_id, a.school_year, a.semester,
-               s.section_code, s.name as section_name,
+               s.name AS section_code, s.name as section_name,
                sj.subject_code, sj.title as subject_title, sj.units,
                sec.department
         FROM assignments a
@@ -131,7 +136,7 @@ function get_teacher_assignments(int $teacherId, string $schoolYear, string $sem
         LEFT JOIN subjects sj ON a.subject_id = sj.id
         LEFT JOIN sections sec ON a.section_id = sec.id
         WHERE a.teacher_id = ? AND a.school_year = ? AND a.semester = ?
-        ORDER BY s.section_code ASC, sj.subject_code ASC
+        ORDER BY s.name ASC, sj.subject_code ASC
     ");
     if (!$stmt) { $conn->close(); return []; }
     $stmt->bind_param('iss', $teacherId, $schoolYear, $semester);
@@ -152,7 +157,7 @@ function get_section_students(int $sectionId): array {
     if (!$conn) return [];
     $stmt = $conn->prepare("
         SELECT s.id, s.student_id, s.first_name, s.middle_name, s.last_name, s.name,
-               sec.section_code, sec.name as section_name
+               sec.name AS section_code, sec.name as section_name
         FROM students s
         LEFT JOIN sections sec ON s.section_id = sec.id
         WHERE s.section_id = ?
@@ -336,31 +341,6 @@ function get_student_assigned_subjects(int $studentId, string $schoolYear = '', 
  * Get available school years and semesters from assignments/grades.
  */
 function get_available_terms(int $userId, string $role): array {
-<<<<<<< HEAD
-    $conn = db_connect();
-    if (!$conn) return ['years' => [], 'semesters' => []];
-    $years = [];
-    $semesters = [];
-
-    if ($role === 'teacher') {
-        $stmt = $conn->prepare("SELECT DISTINCT school_year, semester FROM assignments WHERE teacher_id = ? UNION SELECT DISTINCT school_year, semester FROM grades WHERE teacher_id = ? ORDER BY school_year DESC");
-        $stmt->bind_param('ii', $userId, $userId);
-    } else {
-        // For students: get terms from both grades and assignments
-        $stmt = $conn->prepare("
-            SELECT DISTINCT g.school_year, g.semester FROM grades g WHERE g.student_id = ?
-            UNION
-            SELECT DISTINCT a.school_year, a.semester FROM assignments a WHERE a.section_id IN (SELECT section_id FROM students WHERE id = ?)
-            ORDER BY school_year DESC
-        ");
-        $stmt->bind_param('ii', $userId, $userId);
-    }
-    $stmt->execute();
-    $res = $stmt->get_result();
-    while ($r = $res->fetch_assoc()) {
-        if (!empty($r['school_year']) && !in_array($r['school_year'], $years, true)) $years[] = $r['school_year'];
-        if (!empty($r['semester']) && !in_array($r['semester'], $semesters, true)) $semesters[] = $r['semester'];
-=======
     if ($role === 'teacher') {
         $conn = db_connect();
         if (!$conn) return ['years' => [], 'semesters' => []];
@@ -416,17 +396,7 @@ function get_student_valid_terms(int $userId): array {
     $pairs = [];
     while ($r = $res->fetch_assoc()) {
         $pairs[] = ['year' => $r['school_year'], 'semester' => $r['semester']];
->>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
     }
-    // Order semesters: 1st Semester first, then 2nd Semester
-    $semesterOrder = ['1st Semester', '2nd Semester'];
-    usort($semesters, function($a, $b) use ($semesterOrder) {
-        $posA = array_search($a, $semesterOrder);
-        $posB = array_search($b, $semesterOrder);
-        $posA = $posA === false ? 999 : $posA;
-        $posB = $posB === false ? 999 : $posB;
-        return $posA <=> $posB;
-    });
     $stmt->close();
     $conn->close();
     return $pairs;
@@ -575,6 +545,33 @@ function create_teacher(string $firstName, string $middleName, string $lastName,
     return ['success' => true, 'id' => $newId, 'teacher_id' => $code, 'password' => $password, 'name' => $fullName];
 }
 
+function get_departments(): array {
+    $conn = db_connect();
+    if (!$conn) return [];
+
+    $conn->query(
+        "CREATE TABLE IF NOT EXISTS departments (" .
+        "id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, " .
+        "department_code VARCHAR(100) NOT NULL, " .
+        "name VARCHAR(255) NOT NULL, " .
+        "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " .
+        "UNIQUE KEY unique_department_code (department_code)" .
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $res = $conn->query("SELECT id, department_code, name FROM departments ORDER BY name ASC");
+    $departments = [];
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $departments[] = $row;
+        }
+        $res->free();
+    }
+    $conn->close();
+
+    return $departments;
+}
+
 /**
  * Create student account with auto-generated password.
  */
@@ -625,19 +622,19 @@ function update_teacher(int $id, string $firstName, string $middleName, string $
 /**
  * Update student record.
  */
-function update_student(int $id, string $firstName, string $middleName, string $lastName, ?int $sectionId = null, ?string $password = null): bool {
+function update_student(int $id, string $firstName, string $middleName, string $lastName, ?int $sectionId = null, ?string $department = null, ?string $password = null): bool {
     $conn = db_connect();
     if (!$conn) return false;
     $fullName = make_full_name($firstName, $middleName, $lastName);
     if ($password) {
         $hash = password_hash($password, PASSWORD_DEFAULT);
-        $stmt = $conn->prepare("UPDATE students SET first_name = ?, middle_name = ?, last_name = ?, name = ?, section_id = ?, password_hash = ? WHERE id = ?");
+        $stmt = $conn->prepare("UPDATE students SET first_name = ?, middle_name = ?, last_name = ?, name = ?, section_id = ?, department = ?, password_hash = ? WHERE id = ?");
         if (!$stmt) { $conn->close(); return false; }
-        $stmt->bind_param('ssssisi', $firstName, $middleName, $lastName, $fullName, $sectionId, $hash, $id);
+        $stmt->bind_param('ssssissi', $firstName, $middleName, $lastName, $fullName, $sectionId, $department, $hash, $id);
     } else {
-        $stmt = $conn->prepare("UPDATE students SET first_name = ?, middle_name = ?, last_name = ?, name = ?, section_id = ? WHERE id = ?");
+        $stmt = $conn->prepare("UPDATE students SET first_name = ?, middle_name = ?, last_name = ?, name = ?, section_id = ?, department = ? WHERE id = ?");
         if (!$stmt) { $conn->close(); return false; }
-        $stmt->bind_param('ssssii', $firstName, $middleName, $lastName, $fullName, $sectionId, $id);
+        $stmt->bind_param('ssssisi', $firstName, $middleName, $lastName, $fullName, $sectionId, $department, $id);
     }
     $ok = $stmt->execute();
     $stmt->close();
@@ -652,6 +649,31 @@ function delete_teacher(int $id): bool {
     $conn = db_connect();
     if (!$conn) return false;
     $stmt = $conn->prepare("DELETE FROM teachers WHERE id = ?");
+    if (!$stmt) { $conn->close(); return false; }
+    $stmt->bind_param('i', $id);
+    $ok = $stmt->execute();
+    $stmt->close();
+    $conn->close();
+    return (bool) $ok;
+}
+
+function delete_subject(int $id): bool {
+    $conn = db_connect();
+    if (!$conn) return false;
+
+    $stmt = $conn->prepare("DELETE FROM assignments WHERE subject_id = ?");
+    if (!$stmt) { $conn->close(); return false; }
+    $stmt->bind_param('i', $id);
+    $stmt->execute();
+    $stmt->close();
+
+    $stmt = $conn->prepare("DELETE FROM grades WHERE subject_id = ?");
+    if (!$stmt) { $conn->close(); return false; }
+    $stmt->bind_param('i', $id);
+    $stmt->execute();
+    $stmt->close();
+
+    $stmt = $conn->prepare("DELETE FROM subjects WHERE id = ? LIMIT 1");
     if (!$stmt) { $conn->close(); return false; }
     $stmt->bind_param('i', $id);
     $ok = $stmt->execute();
@@ -696,7 +718,7 @@ function get_all_teachers(): array {
 function get_all_students(): array {
     $conn = db_connect();
     if (!$conn) return [];
-    $res = $conn->query("SELECT s.id, s.student_id, s.first_name, s.middle_name, s.last_name, s.name, s.section_id, sec.section_code, sec.name as section_name FROM students s LEFT JOIN sections sec ON s.section_id = sec.id ORDER BY s.last_name ASC, s.first_name ASC");
+    $res = $conn->query("SELECT s.id, s.student_id, s.first_name, s.middle_name, s.last_name, s.name, s.section_id, sec.name AS section_code, sec.name as section_name FROM students s LEFT JOIN sections sec ON s.section_id = sec.id ORDER BY s.last_name ASC, s.first_name ASC");
     if (!$res) { $conn->close(); return []; }
     $rows = [];
     while ($r = $res->fetch_assoc()) $rows[] = $r;
@@ -711,7 +733,7 @@ function get_all_students(): array {
 function get_all_sections(): array {
     $conn = db_connect();
     if (!$conn) return [];
-    $res = $conn->query("SELECT id, section_code, name, department, school_year, semester FROM sections ORDER BY created_at DESC");
+    $res = $conn->query("SELECT id, name AS section_code, name, department, school_year, semester FROM sections ORDER BY created_at DESC");
     if (!$res) { $conn->close(); return []; }
     $rows = [];
     while ($r = $res->fetch_assoc()) $rows[] = $r;

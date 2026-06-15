@@ -1,10 +1,6 @@
 <?php require_once __DIR__ . '/inc/functions.php'; ?>
 <?php
 session_start();
-<<<<<<< HEAD
-$selectedYear = $_GET['school_year'] ?? null;
-$selectedSem = $_GET['semester'] ?? null;
-=======
 $term = get_global_term();
 $selectedYear = $term['year'];
 $selectedSem  = $term['semester'];
@@ -13,11 +9,11 @@ $selectedSem  = $term['semester'];
 // They are identity records (teachers registry) and must remain visible across terms.
 // Term filtering is only applied to assignments/grades, not to CRUD registries.
 
->>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
 
 $teacherSaveError = '';
 $editingTeacherId = 0;
 $editingTeacherData = [];
+$isEditingTeacher = false;
 $departments = [];
 
 $conn = db_connect();
@@ -27,19 +23,8 @@ if ($conn) {
         while ($row = $res->fetch_assoc()) $departments[] = $row;
         $res->free();
     }
-    // Auto-detect year/sem from assignments if not set
-    if (!$selectedYear) {
-        $res = $conn->query("SELECT school_year, semester FROM assignments WHERE school_year IS NOT NULL AND semester IS NOT NULL ORDER BY created_at DESC LIMIT 1");
-        if ($res && $row = $res->fetch_assoc()) {
-            $selectedYear = $row['school_year'];
-            $selectedSem = $row['semester'];
-        }
-        if ($res) $res->free();
-    }
     $conn->close();
 }
-if (!$selectedYear) $selectedYear = '2025-2026';
-if (!$selectedSem) $selectedSem = '1st Semester';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_teacher'])) {
     $teacherId = intval($_POST['teacher_id'] ?? 0);
@@ -107,6 +92,8 @@ if (isset($_GET['edit_teacher'])) {
         $conn->close();
     }
 }
+
+$isEditingTeacher = (bool) $editingTeacherData;
 
 ?>
 
@@ -876,28 +863,6 @@ if (isset($_GET['edit_teacher'])) {
     </a>
   </aside>
   <div class="main-content">
-<<<<<<< HEAD
-    <div class="global-term-container">
-      <div class="filter-group">
-        <label for="global-filter-year">
-          <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
-          Academic Year:
-        </label>
-        <select id="global-filter-year" class="global-select">
-          <option value="2025-2026" <?= $selectedYear === '2025-2026' ? 'selected' : '' ?>>2025–2026</option>
-          <option value="2024-2025" <?= $selectedYear === '2024-2025' ? 'selected' : '' ?>>2024–2025</option>
-        </select>
-      </div>
-
-      <div class="filter-group">
-        <label for="global-filter-sem">
-          <i class="fa-solid fa-clock" aria-hidden="true"></i> Semester:
-        </label>
-        <select id="global-filter-sem" class="global-select">
-          <option value="1st Semester" <?= $selectedSem === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
-          <option value="2nd Semester" <?= $selectedSem === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
-        </select>
-=======
     <form method="get" action="" style="margin-bottom:0;">
       <input type="hidden" name="global_year" id="hidden-global-year" value="<?php echo htmlspecialchars($selectedYear); ?>">
       <input type="hidden" name="global_sem" id="hidden-global-sem" value="<?php echo htmlspecialchars($selectedSem); ?>">
@@ -923,7 +888,6 @@ if (isset($_GET['edit_teacher'])) {
             <option value="Summer" <?php echo $selectedSem==='Summer'?'selected':''; ?>>Summer</option>
           </select>
         </div>
->>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
       </div>
     </form>
 
@@ -958,14 +922,14 @@ if (isset($_GET['edit_teacher'])) {
                     border: 1px solid #ccc;
                   " />
             </div>
-            <button type="button" id="btn-add-teacher" class="btn-add" style="<?php echo $teacherSaveError ? 'display:none;' : ''; ?>" onclick="var m = document.getElementById('teacher-modal-backdrop'); if (!m) return; m.style.display = 'flex'; this.style.display = 'none';">
+            <button type="button" id="btn-add-teacher" class="btn-add" style="<?php echo ($teacherSaveError || $isEditingTeacher) ? 'display:none;' : ''; ?>" onclick="var m = document.getElementById('teacher-modal-backdrop'); if (!m) return; m.style.display = 'flex'; this.style.display = 'none';">
               <i class="fa-solid fa-plus"></i> Add Teacher
             </button>
           </div>
         </div>
-        <div id="teacher-modal-backdrop" class="modal-backdrop" style="display:<?php echo $teacherSaveError ? 'flex' : 'none'; ?>;">
+        <div id="teacher-modal-backdrop" class="modal-backdrop" style="display:<?php echo ($teacherSaveError || $isEditingTeacher) ? 'flex' : 'none'; ?>;">
           <div class="teacher-form-card">
-            <button type="button" class="teacher-form-close" onclick="document.getElementById('teacher-modal-backdrop').style.display='none'; document.getElementById('btn-add-teacher').style.display='inline-flex';">
+            <button type="button" class="teacher-form-close" onclick="document.getElementById('teacher-modal-backdrop').style.display='none'; document.getElementById('btn-add-teacher').style.display='inline-flex'; document.getElementById('teacher-form').reset(); document.getElementById('teacher-id-field').value='';">
               <i class="fa-solid fa-xmark"></i>
             </button>
             <?php if ($teacherSaveError): ?>
@@ -1004,7 +968,7 @@ if (isset($_GET['edit_teacher'])) {
               </div>
               <div class="form-buttons-row card-action-row">
                 <button type="submit" id="submit-btn" name="add_teacher" class="btn-submit">Save Teacher</button>
-                <button type="button" onclick="document.getElementById('teacher-modal-backdrop').style.display='none'; document.getElementById('btn-add-teacher').style.display='inline-flex'; document.getElementById('teacher-form').reset();" class="btn-cancel">Cancel</button>
+                <button type="button" onclick="document.getElementById('teacher-modal-backdrop').style.display='none'; document.getElementById('btn-add-teacher').style.display='inline-flex'; document.getElementById('teacher-form').reset(); document.getElementById('teacher-id-field').value='';" class="btn-cancel">Cancel</button>
               </div>
             </form>
           </div>
@@ -1061,59 +1025,6 @@ $res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name, 
         </div>
     </div>
   </div>
-<<<<<<< HEAD
-<script>
-     // Variables
-     const globalYearSelect = document.getElementById('global-filter-year');
-     const globalSemSelect = document.getElementById('global-filter-sem');
-
-     // Handlers
-     function handleYearChange() {
-       const url = new URL(window.location);
-       url.searchParams.set('school_year', this.value);
-       window.location = url;
-     }
-
-     function handleSemChange() {
-       const url = new URL(window.location);
-       url.searchParams.set('semester', this.value);
-       window.location = url;
-     }
-
-     function togglePassword(id) {
-       const dots = document.getElementById('pwd-dots-' + id);
-       const text = document.getElementById('pwd-text-' + id);
-       const eye = document.getElementById('pwd-eye-' + id);
-       if (dots.style.display === 'none') {
-         dots.style.display = '';
-         text.style.display = 'none';
-         eye.className = 'fa-solid fa-eye';
-       } else {
-         dots.style.display = 'none';
-         text.style.display = '';
-         eye.className = 'fa-solid fa-eye-slash';
-       }
-     }
-
-     function filterTeachers(query) {
-       query = query.toLowerCase();
-       document.querySelectorAll('#teachers-table tbody tr').forEach(row => {
-         row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
-       });
-     }
-
-     // Listeners
-     document.addEventListener('DOMContentLoaded', function () {
-       globalYearSelect?.addEventListener('change', handleYearChange);
-       globalSemSelect?.addEventListener('change', handleSemChange);
-       document.querySelectorAll('.table-search-input').forEach(input => {
-         input.addEventListener('input', function() {
-           filterTeachers(this.value);
-         });
-       });
-     });
-   </script>
-=======
   <script>
     function syncGlobalFilter() {
       const year = document.getElementById('global-filter-year').value;
@@ -1130,13 +1041,19 @@ $res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name, 
     function openTeacherModal() {
       document.getElementById('teacher-modal').style.display = 'flex';
       document.getElementById('btn-add-teacher').style.display = 'none';
+      document.getElementById('form-title').textContent = 'Add Teacher';
+      document.getElementById('form-subtitle').textContent = 'Enter the teacher details below.';
+      const submitBtn = document.querySelector('#teacher-form button[type="submit"]');
+      submitBtn.name = 'add_teacher';
+      submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Teacher';
     }
     function closeTeacherModal() {
       document.getElementById('teacher-modal').style.display = 'none';
       document.getElementById('btn-add-teacher').style.display = 'inline-flex';
       document.getElementById('teacher-form').reset();
       document.getElementById('teacher-id-field').value = '';
-      document.getElementById('modal-title').textContent = 'Add Teacher';
+      document.getElementById('form-title').textContent = 'Add Teacher';
+      document.getElementById('form-subtitle').textContent = 'Enter the teacher details below.';
       const submitBtn = document.querySelector('#teacher-form button[type="submit"]');
       submitBtn.name = 'add_teacher';
       submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Teacher';
@@ -1166,7 +1083,14 @@ $res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name, 
         filterTeachers(this.value);
       });
     });
+
+    if (document.getElementById('teacher-id-field').value) {
+      document.getElementById('form-title').textContent = 'Edit Teacher';
+      document.getElementById('form-subtitle').textContent = 'Update the teacher details below.';
+      const submitBtn = document.querySelector('#teacher-form button[type="submit"]');
+      submitBtn.name = 'update_teacher';
+      submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Update Teacher';
+    }
   </script>
->>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
 </body>
 </html>

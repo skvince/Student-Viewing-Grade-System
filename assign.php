@@ -7,22 +7,19 @@ if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
     exit;
 }
 
-<<<<<<< HEAD
-$selectedYear = $_GET['school_year'] ?? null;
-$selectedSem = $_GET['semester'] ?? null;
-=======
 $term = get_global_term();
 $selectedYear = $term['year'];
 $selectedSem  = $term['semester'];
->>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
 
 $teachers     = [];
 $sections     = [];
 $subjects     = [];
 $assignments  = [];
 $saveError    = '';
-$subjectError = '';
+$subjectError = $_SESSION['subject_error'] ?? '';
+unset($_SESSION['subject_error']);
 $editSubjectId = isset($_GET['edit_subject']) ? intval($_GET['edit_subject']) : 0;
+$gradedSubjectIds = [];
 
 /* ═══════════════════════════════════════════════════════════
    HANDLER 1 — DELETE ASSIGNMENT
@@ -92,33 +89,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_subject'])) {
 
 /* ═══════════════════════════════════════════════════════════
    HANDLER 3 — DELETE SUBJECT
-   Blocked if subject is referenced by any assignment (FK safety).
+   Blocked if subject is referenced by assignments or grades (FK safety).
    ═══════════════════════════════════════════════════════════ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_subject'])) {
     $subjectId = intval($_POST['subject_id'] ?? 0);
     if ($subjectId) {
-        $conn = db_connect();
-        if ($conn) {
-            // Refuse if already assigned
-            $chk = $conn->prepare("SELECT id FROM assignments WHERE subject_id = ? LIMIT 1");
-            $inUse = true; // fail-safe default
-            if ($chk) {
-                $chk->bind_param('i', $subjectId);
-                $chk->execute();
-                $chk->store_result();
-                $inUse = ($chk->num_rows > 0);
-                $chk->close();
-            }
-            if (!$inUse) {
-                $st = $conn->prepare("DELETE FROM subjects WHERE id = ? LIMIT 1");
-                if ($st) {
-                    $st->bind_param('i', $subjectId);
-                    $st->execute();
-                    $st->close();
-                    audit_log('delete_subject');
-                }
-            }
-            $conn->close();
+        if (delete_subject($subjectId)) {
+            audit_log('delete_subject');
+        } else {
+            $_SESSION['subject_error'] = 'Cannot delete: subject is already used in assignments or grades.';
         }
     }
     header('Location: ' . $_SERVER['PHP_SELF']);
@@ -179,7 +158,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_assignment'])) {
     $schoolYear = trim($_POST['school_year']   ?? '');
     $semester   = trim($_POST['semester']      ?? '');
 
+    // Normalize to match teacher_module.php filtering logic.
+    $schoolYear = normalize_school_year($schoolYear);
+    $semester   = normalize_semester($semester);
+
     if (!$teacherId || !$sectionId || !$subjectId) {
+
         $saveError = 'Teacher, Section, and Subject Module are required.';
     } else {
         $conn = db_connect();
@@ -238,6 +222,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_assignment']))
     $schoolYear   = trim($_POST['school_year']    ?? '');
     $semester     = trim($_POST['semester']        ?? '');
 
+    // Normalize to match teacher_module.php filtering logic.
+    $schoolYear = normalize_school_year($schoolYear);
+    $semester   = normalize_semester($semester);
+
+
     if (!$assignmentId || !$teacherId || !$sectionId || !$subjectId) {
         $saveError = 'Teacher, Section, and Subject Module are required.';
     } else {
@@ -284,21 +273,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_assignment']))
 }
 
 /* ═══════════════════════════════════════════════════════════
-    FETCH DATA FOR PAGE RENDER
-    ═══════════════════════════════════════════════════════════ */
+   FETCH DATA FOR PAGE RENDER
+   ═══════════════════════════════════════════════════════════ */
 $conn = db_connect();
 if ($conn) {
-    // Auto-detect year/sem if not set
-    if (!$selectedYear) {
-        $res = $conn->query("SELECT school_year, semester FROM subjects WHERE school_year IS NOT NULL AND semester IS NOT NULL ORDER BY id DESC LIMIT 1");
-        if ($res && $row = $res->fetch_assoc()) {
-            $selectedYear = $row['school_year'];
-            $selectedSem = $row['semester'];
-        }
-        if ($res) $res->free();
-    }
-    if (!$selectedYear) $selectedYear = '2025-2026';
-    if (!$selectedSem) $selectedSem = '1st Semester';
 
     // Escape global term early (used by Sections/Subjects queries)
     $escapedYear = $conn->real_escape_string($selectedYear);
@@ -311,13 +289,8 @@ if ($conn) {
         $res->free();
     }
 
-<<<<<<< HEAD
-// Sections
-    $res = $conn->query("SELECT id, section_code, name, school_year, semester FROM sections ORDER BY created_at DESC");
-=======
     // Sections — filtered by global term
-    $res = $conn->query("SELECT id, section_code, name FROM sections WHERE school_year = '" . $escapedYear . "' AND semester = '" . $escapedSem . "' ORDER BY created_at DESC");
->>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
+    $res = $conn->query("SELECT id, name AS section_code, name FROM sections WHERE school_year = '" . $escapedYear . "' AND semester = '" . $escapedSem . "' ORDER BY created_at DESC");
     if ($res) {
         while ($row = $res->fetch_assoc()) $sections[] = $row;
         $res->free();
@@ -325,14 +298,7 @@ if ($conn) {
 
     // Subjects — loaded from DB, filtered by global term, not from JS DOM
     $res = $conn->query(
-<<<<<<< HEAD
-        "SELECT id, subject_code, title, units, school_year, semester FROM subjects " .
-        "WHERE school_year = '" . $conn->real_escape_string($selectedYear) . "' " .
-        "AND semester = '" . $conn->real_escape_string($selectedSem) . "' " .
-        "ORDER BY subject_code ASC"
-=======
         "SELECT id, subject_code, title, units, school_year, semester FROM subjects WHERE school_year = '" . $escapedYear . "' AND semester = '" . $escapedSem . "' ORDER BY subject_code ASC"
->>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
     );
     if ($res) {
         while ($row = $res->fetch_assoc()) $subjects[] = $row;
@@ -347,25 +313,25 @@ if ($conn) {
              a.school_year,
              a.semester,
              t.name         AS teacher_name,
-             s.section_code AS section_name,
+             s.name AS section_name,
              sj.subject_code,
              sj.title       AS subject_title
          FROM assignments a
          LEFT JOIN teachers  t  ON a.teacher_id  = t.id
          LEFT JOIN sections  s  ON a.section_id  = s.id
          LEFT JOIN subjects  sj ON a.subject_id  = sj.id
-<<<<<<< HEAD
-         WHERE a.school_year = '" . $conn->real_escape_string($selectedYear) . "' " .
-         "AND a.semester = '" . $conn->real_escape_string($selectedSem) . "' " .
-         "ORDER BY a.created_at DESC"
-=======
          WHERE a.school_year = '" . $escapedYear . "' AND a.semester = '" . $escapedSem . "'
          ORDER BY a.created_at DESC"
->>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
     );
     if ($res) {
         while ($row = $res->fetch_assoc()) $assignments[] = $row;
         $res->free();
+    }
+
+    $gradeRes = $conn->query("SELECT DISTINCT subject_id FROM grades");
+    if ($gradeRes) {
+        while ($row = $gradeRes->fetch_assoc()) $gradedSubjectIds[] = intval($row['subject_id']);
+        $gradeRes->free();
     }
 
     $editSubject = null;
@@ -380,6 +346,7 @@ if ($conn) {
 $assignedSubjectIds = array_unique(
     array_column(array_filter($assignments ?? [], fn($a) => !empty($a['subject_id'])), 'subject_id')
 );
+$gradedSubjectIds = array_unique($gradedSubjectIds);
 ?>
 <!doctype html>
 <html lang="en">
@@ -430,60 +397,11 @@ $assignedSubjectIds = array_unique(
 
     /* Main */
     .main-content { padding: 40px; min-width: 0; }
-
-    /* --- SCREENSHOT-MATCHED GLOBAL TERM CONTAINER --- */
-    .global-term-container {
-      display: flex;
-      align-items: center;
-      gap: 24px;
-      background-color: #0c3e21;
-      padding: 16px 24px;
-      border-radius: 12px;
-      margin-bottom: 24px;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-      flex-wrap: wrap;
-    }
-
-    .filter-group {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .global-term-container label {
-      color: #ffffff;
-      font-size: 0.9rem;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      white-space: nowrap;
-    }
-
-    .global-term-container label i {
-      font-size: 1rem;
-    }
-
-    .global-select {
-      padding: 8px 14px;
-      border-radius: 6px;
-      border: 1px solid transparent;
-      font-size: 0.875rem;
-      background-color: #ffffff;
-      color: #1f2937;
-      font-weight: 500;
-      cursor: pointer;
-      outline: none;
-      min-width: 140px;
-      transition:
-        border-color 0.2s,
-        box-shadow 0.2s;
-    }
-
-    .global-select:focus {
-      border-color: #22c55e;
-      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
-    }
+    .global-term-container { display: flex; align-items: center; gap: 24px; background-color: #0c3e21; padding: 16px 24px; border-radius: 12px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,.1); flex-wrap: wrap; }
+    .filter-group { display: flex; align-items: center; gap: 12px; }
+    .global-term-container label { color: #fff; font-size: .9rem; font-weight: 700; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+    .global-select { padding: 8px 14px; border-radius: 6px; border: 1px solid transparent; font-size: .875rem; background-color: #fff; color: #1f2937; font-weight: 500; cursor: pointer; outline: none; min-width: 140px; transition: border-color .2s, box-shadow .2s; }
+    .global-select:focus { border-color: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.2); }
 
     /* Typography */
     .view-title { font-size: 1.25rem; color: var(--primary-green); font-weight: 600; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .5px; }
@@ -577,28 +495,9 @@ $assignedSubjectIds = array_unique(
 
   <div class="main-content">
 
-<!-- Global term filter bar -->
+    <!-- Global term filter bar -->
     <div class="global-term-container">
       <div class="filter-group">
-<<<<<<< HEAD
-        <label for="global-filter-year">
-          <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
-          Academic Year:
-        </label>
-        <select id="global-filter-year" class="global-select">
-          <option value="2025-2026" <?= $selectedYear === '2025-2026' ? 'selected' : '' ?>>2025–2026</option>
-          <option value="2024-2025" <?= $selectedYear === '2024-2025' ? 'selected' : '' ?>>2024–2025</option>
-        </select>
-      </div>
-      <div class="filter-group">
-        <label for="global-filter-sem">
-          <i class="fa-solid fa-clock" aria-hidden="true"></i>
-          Semester:
-        </label>
-        <select id="global-filter-sem" class="global-select">
-          <option value="1st Semester" <?= $selectedSem === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
-          <option value="2nd Semester" <?= $selectedSem === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
-=======
         <label for="global-filter-year"><i class="fa-solid fa-calendar-days"></i> Academic Year:</label>
         <select id="global-filter-year" class="global-select" onchange="syncGlobalFilter()">
           <option value="2025-2026" <?php echo $selectedYear==='2025-2026'?'selected':''; ?>>2025–2026</option>
@@ -611,7 +510,6 @@ $assignedSubjectIds = array_unique(
           <option value="1st Semester" <?php echo $selectedSem==='1st Semester'?'selected':''; ?>>1st Semester</option>
           <option value="2nd Semester" <?php echo $selectedSem==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
           <option value="Summer" <?php echo $selectedSem==='Summer'?'selected':''; ?>>Summer</option>
->>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
         </select>
       </div>
     </div>
@@ -712,8 +610,9 @@ $assignedSubjectIds = array_unique(
           <tbody id="subject-table-body">
               <?php if ($subjects): ?>
                 <?php foreach ($subjects as $subject):
+                  $subjectId = (int)$subject['id'];
                   // FIX: lock check uses integer ID comparison, not string matching
-                  $isAssigned = in_array((int)$subject['id'], $assignedSubjectIds, true);
+                  $isUsed = in_array($subjectId, $assignedSubjectIds, true) || in_array($subjectId, $gradedSubjectIds, true);
                 ?>
                 <tr>
                   <td><?= htmlspecialchars($subject['subject_code']) ?></td>
@@ -722,23 +621,23 @@ $assignedSubjectIds = array_unique(
                   <td><?= htmlspecialchars($subject['school_year'] ?? '') ?></td>
                   <td><?= htmlspecialchars($subject['semester'] ?? '') ?></td>
                   <td class="actions-cell">
-                    <?php if ($isAssigned): ?>
-                      <span title="Cannot delete: subject is already assigned" style="color:#9ca3af;cursor:not-allowed;">
-                        <i class="fa-solid fa-lock"></i>
-                      </span>
-                    <?php else: ?>
-                      <a href="?edit_subject=<?= intval($subject['id']) ?>#subject-form-anchor"
-                         class="icon-button" title="Edit subject" style="text-decoration:none;">
-                        <i class="fa-solid fa-pen-to-square" style="color:#059669;"></i>
-                      </a>
-                      <form method="post" style="display:inline;margin:0;padding:0;" onsubmit="return confirm('Delete this subject?');">
-                        <input type="hidden" name="delete_subject" value="1">
-                        <input type="hidden" name="subject_id" value="<?= intval($subject['id']) ?>">
-                        <button type="submit" class="icon-button" title="Delete subject">
-                          <i class="fa-solid fa-trash-can"></i>
-                        </button>
-                      </form>
-                    <?php endif; ?>
+                    <button type="button" class="icon-button btn-edit-subject"
+                            data-id="<?= intval($subject['id']) ?>"
+                            data-code="<?= htmlspecialchars($subject['subject_code'] ?? '', ENT_QUOTES) ?>"
+                            data-title="<?= htmlspecialchars($subject['title'] ?? '', ENT_QUOTES) ?>"
+                            data-units="<?= htmlspecialchars($subject['units'] ?? 3, ENT_QUOTES) ?>"
+                            data-year="<?= htmlspecialchars($subject['school_year'] ?? '', ENT_QUOTES) ?>"
+                            data-semester="<?= htmlspecialchars($subject['semester'] ?? '', ENT_QUOTES) ?>"
+                            title="Update subject">
+                      <i class="fa-solid fa-pen-to-square" style="color:#059669;"></i>
+                    </button>
+                    <form method="post" style="display:inline;margin:0;padding:0;" onsubmit="return confirm('Delete this subject and its related assignment/grade records?');">
+                      <input type="hidden" name="delete_subject" value="1">
+                      <input type="hidden" name="subject_id" value="<?= intval($subject['id']) ?>">
+                      <button type="submit" class="icon-button" title="Delete subject">
+                        <i class="fa-solid fa-trash-can"></i>
+                      </button>
+                    </form>
                   </td>
                 </tr>
                 <?php endforeach; ?>
@@ -802,7 +701,7 @@ $assignedSubjectIds = array_unique(
                 <option value="" disabled selected hidden>Select section...</option>
                 <?php foreach ($sections as $sec): ?>
                   <option value="<?= intval($sec['id']) ?>">
-                    <?= htmlspecialchars($sec['section_code'] . ' - ' . ($sec['name'] ?? '')) ?>
+                    <?= htmlspecialchars($sec['name']) ?>
                   </option>
                 <?php endforeach; ?>
               </select>
@@ -810,19 +709,22 @@ $assignedSubjectIds = array_unique(
 
             <div class="form-group">
               <label for="select-school-year">School Year</label>
-              <select id="select-school-year" name="school_year" class="form-control" required disabled>
-                <option value="<?php echo htmlspecialchars($selectedYear); ?>" selected><?php echo htmlspecialchars($selectedYear); ?></option>
+              <select id="select-school-year" name="school_year" class="form-control" required>
+                <option value="" disabled <?= $selectedYear === '' ? 'selected' : '' ?>>Select school year...</option>
+                <option value="2025-2026" <?= $selectedYear === '2025-2026' ? 'selected' : '' ?>>S.Y. 2025-2026</option>
+                <option value="2026-2027" <?= $selectedYear === '2026-2027' ? 'selected' : '' ?>>S.Y. 2026-2027</option>
               </select>
-              <input type="hidden" name="school_year" value="<?php echo htmlspecialchars($selectedYear); ?>">
             </div>
           </div>
 
           <div class="form-group">
             <label for="select-semester">Semester</label>
-              <select id="select-semester" name="semester" class="form-control" required disabled>
-                <option value="<?php echo htmlspecialchars($selectedSem); ?>" selected><?php echo htmlspecialchars($selectedSem); ?></option>
+              <select id="select-semester" name="semester" class="form-control" required>
+                <option value="" disabled <?= $selectedSem === '' ? 'selected' : '' ?>>Select semester...</option>
+                <option value="1st Semester" <?= $selectedSem === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
+                <option value="2nd Semester" <?= $selectedSem === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
+                <option value="Summer" <?= $selectedSem === 'Summer' ? 'selected' : '' ?>>Summer</option>
               </select>
-              <input type="hidden" name="semester" value="<?php echo htmlspecialchars($selectedSem); ?>">
           </div>
 
           <div class="form-buttons-row">
@@ -933,7 +835,7 @@ $assignedSubjectIds = array_unique(
                 <option value="" disabled selected hidden>Select section...</option>
                 <?php foreach ($sections as $sec): ?>
                   <option value="<?= intval($sec['id']) ?>">
-                    <?= htmlspecialchars($sec['section_code'] . ' - ' . ($sec['name'] ?? '')) ?>
+                    <?= htmlspecialchars($sec['name']) ?>
                   </option>
                 <?php endforeach; ?>
               </select>
@@ -966,20 +868,6 @@ $assignedSubjectIds = array_unique(
 
   </div><!-- /.main-content -->
 
-<<<<<<< HEAD
-<script>
-   // Variables
-   const globalYearSelect = document.getElementById('global-filter-year');
-   const globalSemSelect = document.getElementById('global-filter-sem');
-   const modal = document.getElementById('edit-modal');
-   const btnClose = document.getElementById('btn-close-modal');
-   const subjectIdField = document.getElementById('subject-edit-id');
-   const subCodeInput = document.getElementById('sub-code-input');
-   const subTitleInput = document.getElementById('sub-name-input');
-   const subYearSelect = document.getElementById('sub-year-select');
-   const subSemSelect = document.getElementById('sub-sem-select');
-   const btnCancelSubjectEdit = document.getElementById('btn-cancel-subject-edit');
-=======
   <script>
     function syncGlobalFilter() {
       const year = document.getElementById('global-filter-year').value;
@@ -996,86 +884,69 @@ $assignedSubjectIds = array_unique(
     document.addEventListener('DOMContentLoaded', function () {
     const modal = document.getElementById('edit-modal');
     const btnClose = document.getElementById('btn-close-modal');
->>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
 
-   // Handlers
-   function handleYearChange() {
-     const url = new URL(window.location);
-     url.searchParams.set('school_year', this.value);
-     window.location = url;
-   }
+    document.querySelectorAll('.btn-edit-assignment').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        const data = btn.dataset;
+        document.getElementById('edit-assignment-id').value = data.id || '';
+        document.getElementById('edit-teacher').value = data.teacher || '';
+        document.getElementById('edit-subject').value = data.subject || '';
+        document.getElementById('edit-section').value = data.section || '';
+        document.getElementById('edit-school-year').value = data.year || '';
+        document.getElementById('edit-semester').value = data.semester || '';
+        modal.style.display = 'flex';
+      });
+    });
 
-   function handleSemChange() {
-     const url = new URL(window.location);
-     url.searchParams.set('semester', this.value);
-     window.location = url;
-   }
+    function closeModal() { modal.style.display = 'none'; }
+    btnClose.addEventListener('click', closeModal);
+    modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
 
-   function openEditModal(btn) {
-     const data = btn.dataset;
-     document.getElementById('edit-assignment-id').value = data.id || '';
-     document.getElementById('edit-teacher').value = data.teacher || '';
-     document.getElementById('edit-subject').value = data.subject || '';
-     document.getElementById('edit-section').value = data.section || '';
-     document.getElementById('edit-school-year').value = data.year || '';
-     document.getElementById('edit-semester').value = data.semester || '';
-     modal.style.display = 'flex';
-   }
+    const subjectIdField = document.getElementById('subject-edit-id');
+    const subCodeInput = document.getElementById('sub-code-input');
+    const subTitleInput = document.getElementById('sub-name-input');
+    const subUnitsInput = document.getElementById('sub-units-input');
+    const subYearSelect = document.getElementById('sub-year-select');
+    const subSemSelect = document.getElementById('sub-sem-select');
+    const btnCancelSubjectEdit = document.getElementById('btn-cancel-subject-edit');
 
-   function closeModal() { modal.style.display = 'none'; }
+    document.querySelectorAll('.btn-edit-subject').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        const data = btn.dataset;
+        subjectIdField.value = data.id || '';
+        subCodeInput.value = data.code || '';
+        subTitleInput.value = data.title || '';
+        subUnitsInput.value = data.units || '3';
+        subYearSelect.value = data.year || '';
+        subSemSelect.value = data.semester || '';
+        document.getElementById('sub-code-input').focus();
+        window.scrollTo({ top: document.getElementById('subject-block-container').offsetTop - 20, behavior: 'smooth' });
+      });
+    });
 
-   function openSubjectEdit(btn) {
-     const data = btn.dataset;
-     subjectIdField.value = data.id || '';
-     subCodeInput.value = data.code || '';
-     subTitleInput.value = data.title || '';
-     subYearSelect.value = data.year || '';
-     subSemSelect.value = data.semester || '';
-     document.getElementById('sub-code-input').focus();
-     window.scrollTo({ top: document.getElementById('subject-block-container').offsetTop - 20, behavior: 'smooth' });
-   }
+    function cancelSubjectEdit() {
+      subjectIdField.value = '';
+      subCodeInput.value = '';
+      subTitleInput.value = '';
+      subUnitsInput.value = '3';
+      subYearSelect.value = '';
+      subSemSelect.value = '';
+    }
+    if (btnCancelSubjectEdit) {
+      btnCancelSubjectEdit.addEventListener('click', cancelSubjectEdit);
+    }
 
-   function cancelSubjectEdit() {
-     subjectIdField.value = '';
-     subCodeInput.value = '';
-     subTitleInput.value = '';
-     subYearSelect.value = '';
-     subSemSelect.value = '';
-   }
-
-   function filterTableRows() {
-     const q = this.value.toLowerCase();
-     const panel = this.closest('.panel-block') || this.closest('[id$="-container"]');
-     if (!panel) return;
-     panel.querySelectorAll('tbody tr').forEach(function (row) {
-       row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
-     });
-   }
-
-   // Listeners
-   document.addEventListener('DOMContentLoaded', function () {
-     globalYearSelect?.addEventListener('change', handleYearChange);
-     globalSemSelect?.addEventListener('change', handleSemChange);
-
-     document.querySelectorAll('.btn-edit-assignment').forEach(function (btn) {
-       btn.addEventListener('click', function () { openEditModal(btn); });
-     });
-
-     btnClose.addEventListener('click', closeModal);
-     modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
-
-     document.querySelectorAll('.btn-edit-subject').forEach(function (btn) {
-       btn.addEventListener('click', function () { openSubjectEdit(btn); });
-     });
-
-     if (btnCancelSubjectEdit) {
-       btnCancelSubjectEdit.addEventListener('click', cancelSubjectEdit);
-     }
-
-     document.querySelectorAll('.table-search-input').forEach(function (input) {
-       input.addEventListener('input', filterTableRows);
-     });
-   });
- </script>
+    document.querySelectorAll('.table-search-input').forEach(function (input) {
+      input.addEventListener('input', function () {
+        const q = this.value.toLowerCase();
+        const panel = this.closest('.panel-block') || this.closest('[id$="-container"]');
+        if (!panel) return;
+        panel.querySelectorAll('tbody tr').forEach(function (row) {
+          row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+        });
+      });
+    });
+  });
+  </script>
 </body>
 </html>

@@ -6,14 +6,9 @@ if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
     exit;
 }
 
-<<<<<<< HEAD
-$selectedYear = $_GET['school_year'] ?? null;
-$selectedSem = $_GET['semester'] ?? null;
-=======
 $term = get_global_term();
 $selectedYear = $term['year'];
 $selectedSem  = $term['semester'];
->>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
 
 $totalTeachers = 0;
 $totalStudents = 0;
@@ -22,53 +17,15 @@ $recentAssignments = [];
 
 $conn = db_connect();
 if ($conn) {
-<<<<<<< HEAD
-    if (!$selectedYear) {
-        $res = $conn->query("SELECT school_year, semester FROM assignments WHERE school_year IS NOT NULL AND semester IS NOT NULL ORDER BY created_at DESC LIMIT 1");
-        if ($res && $row = $res->fetch_assoc()) {
-            $selectedYear = $row['school_year'];
-            $selectedSem = $row['semester'];
-        }
-        if ($res) $res->free();
-    }
-    if (!$selectedYear) $selectedYear = '2025-2026';
-    if (!$selectedSem) $selectedSem = '1st Semester';
-
-    $res = $conn->query("SELECT COUNT(*) AS count FROM teachers");
-    if ($res) {
-        $row = $res->fetch_assoc();
-        $totalTeachers = intval($row['count'] ?? 0);
-        $res->free();
-    }
-    $res = $conn->query("SELECT COUNT(*) AS count FROM students");
-    if ($res) {
-        $row = $res->fetch_assoc();
-        $totalStudents = intval($row['count'] ?? 0);
-        $res->free();
-    }
-    $res = $conn->query("SELECT COUNT(*) AS count FROM assignments WHERE school_year = '" . $conn->real_escape_string($selectedYear) . "' AND semester = '" . $conn->real_escape_string($selectedSem) . "'");
-    if ($res) {
-        $row = $res->fetch_assoc();
-        $totalAssignments = intval($row['count'] ?? 0);
-        $res->free();
-    }
-=======
     $totalTeachers = (int) $conn->query("SELECT COUNT(*) AS count FROM teachers")->fetch_assoc()['count'];
     $totalStudents = (int) $conn->query("SELECT COUNT(*) AS count FROM students")->fetch_assoc()['count'];
     $totalAssignments = (int) $conn->query("SELECT COUNT(*) AS count FROM assignments WHERE school_year = '" . $conn->real_escape_string($selectedYear) . "' AND semester = '" . $conn->real_escape_string($selectedSem) . "'")->fetch_assoc()['count'];
->>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
     $res = $conn->query(
-        "SELECT a.school_year, a.semester, t.name AS teacher_name, s.section_code AS section_name, sj.subject_code, sj.title AS subject_title " .
+        "SELECT a.module, a.school_year, a.semester, t.name AS teacher_name, s.name AS section_name " .
         "FROM assignments a " .
         "LEFT JOIN teachers t ON a.teacher_id = t.id " .
         "LEFT JOIN sections s ON a.section_id = s.id " .
-<<<<<<< HEAD
-        "LEFT JOIN subjects sj ON a.subject_id = sj.id " .
-        "WHERE a.school_year = '" . $conn->real_escape_string($selectedYear) . "' " .
-        "AND a.semester = '" . $conn->real_escape_string($selectedSem) . "' " .
-=======
         "WHERE a.school_year = '" . $conn->real_escape_string($selectedYear) . "' AND a.semester = '" . $conn->real_escape_string($selectedSem) . "' " .
->>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
         "ORDER BY a.created_at DESC LIMIT 10"
     );
     if ($res) {
@@ -756,28 +713,6 @@ if ($conn) {
     <a href="login.php?logout=1" class="logout-btn"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
   </aside>
   <div class="main-content">
-<<<<<<< HEAD
-    <div class="global-term-container">
-      <div class="filter-group">
-        <label for="global-filter-year">
-          <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
-          Academic Year:
-        </label>
-        <select id="global-filter-year" class="global-select">
-          <option value="2025-2026" <?= $selectedYear === '2025-2026' ? 'selected' : '' ?>>2025–2026</option>
-          <option value="2024-2025" <?= $selectedYear === '2024-2025' ? 'selected' : '' ?>>2024–2025</option>
-        </select>
-      </div>
-
-      <div class="filter-group">
-        <label for="global-filter-sem">
-          <i class="fa-solid fa-clock" aria-hidden="true"></i> Semester:
-        </label>
-        <select id="global-filter-sem" class="global-select">
-          <option value="1st Semester" <?= $selectedSem === '1st Semester' ? 'selected' : '' ?>>1st Semester</option>
-          <option value="2nd Semester" <?= $selectedSem === '2nd Semester' ? 'selected' : '' ?>>2nd Semester</option>
-        </select>
-=======
     <form method="get" action="" style="margin-bottom:0;">
       <input type="hidden" name="global_year" id="hidden-global-year" value="<?php echo htmlspecialchars($selectedYear); ?>">
       <input type="hidden" name="global_sem" id="hidden-global-sem" value="<?php echo htmlspecialchars($selectedSem); ?>">
@@ -803,7 +738,6 @@ if ($conn) {
             <option value="Summer" <?php echo $selectedSem==='Summer'?'selected':''; ?>>Summer</option>
           </select>
         </div>
->>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
       </div>
     </form>
 
@@ -867,10 +801,9 @@ if ($conn) {
 <?php
 if (count($recentAssignments)) {
     foreach ($recentAssignments as $assignment) {
-        $subjectDisplay = ($assignment['subject_code'] ?? '') . ' - ' . ($assignment['subject_title'] ?? '');
         echo '<tr>';
         echo '<td>' . htmlspecialchars($assignment['teacher_name'] ?? '') . '</td>';
-        echo '<td>' . htmlspecialchars($subjectDisplay) . '</td>';
+        echo '<td>' . htmlspecialchars($assignment['module'] ?? '') . '</td>';
         echo '<td>' . htmlspecialchars($assignment['section_name'] ?? '') . '</td>';
         echo '<td>' . htmlspecialchars(trim(($assignment['school_year'] ?? '') . ' ' . ($assignment['semester'] ?? ''))) . '</td>';
         echo '</tr>';
@@ -885,45 +818,6 @@ if (count($recentAssignments)) {
       </div>
     </div>
   </div>
-<<<<<<< HEAD
-<script>
-     // Variables
-     const searchInput = document.querySelector('.table-search-input');
-     const tableBody = document.getElementById('dashboard-recent-table-body');
-     const globalYearSelect = document.getElementById('global-filter-year');
-     const globalSemSelect = document.getElementById('global-filter-sem');
-
-     // Handlers
-     function filterAssignments() {
-       const query = searchInput.value.toLowerCase().trim();
-       const rows = tableBody.querySelectorAll('tr');
-       rows.forEach(row => {
-         row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
-       });
-     }
-
-     function handleYearChange() {
-       const url = new URL(window.location);
-       url.searchParams.set('school_year', this.value);
-       window.location = url;
-     }
-
-     function handleSemChange() {
-       const url = new URL(window.location);
-       url.searchParams.set('semester', this.value);
-       window.location = url;
-     }
-
-     // Listeners
-     document.addEventListener('DOMContentLoaded', function () {
-       globalYearSelect?.addEventListener('change', handleYearChange);
-       globalSemSelect?.addEventListener('change', handleSemChange);
-       if (searchInput) {
-         searchInput.addEventListener('input', filterAssignments);
-       }
-     });
-   </script>
-=======
   <script>
   function syncGlobalFilter() {
     const year = document.getElementById('global-filter-year').value;
@@ -986,6 +880,5 @@ if (count($recentAssignments)) {
     }
   });
 </script>
->>>>>>> fb2d24f95a6588be3c3b58f632cfbc2919f0b160
 </body>
 </html>
