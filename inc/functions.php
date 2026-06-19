@@ -1,9 +1,6 @@
 <?php
 require_once __DIR__ . '/db.php';
 
-/**
- * Simple query helper that returns mysqli_result or false.
- */
 function db_query(string $sql) {
     $conn = db_connect();
     if (!$conn) return false;
@@ -12,9 +9,6 @@ function db_query(string $sql) {
     return $res;
 }
 
-/**
- * Escape a string using a transient connection.
- */
 function db_escape(string $value): string {
     $conn = db_connect();
     if (!$conn) return '';
@@ -23,34 +17,24 @@ function db_escape(string $value): string {
     return $escaped;
 }
 
-/**
- * Audit log helper — stores a simple record in `audit_logs`.
- * Returns true on success.
- */
-function audit_log(string $action, ?int $user_id = null): bool {
+function audit_log(string $action, ?int $user_id = null, ?string $grading_period = null, ?string $academic_year = null, ?string $semester = null, ?int $request_id = null, ?int $teacher_id = null, ?int $subject_id = null, ?int $section_id = null): bool {
     $conn = db_connect();
     if (!$conn) return false;
-    $stmt = $conn->prepare("INSERT INTO audit_logs (user_id, action, ip) VALUES (?, ?, ?)");
+    $stmt = $conn->prepare("INSERT INTO audit_logs (user_id, action, grading_period, academic_year, semester, request_id, teacher_id, subject_id, section_id, ip) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     if (!$stmt) { $conn->close(); return false; }
     $ip = $_SERVER['REMOTE_ADDR'] ?? '';
-    $stmt->bind_param('iss', $user_id, $action, $ip);
+    $stmt->bind_param('issssiiiis', $user_id, $action, $grading_period, $academic_year, $semester, $request_id, $teacher_id, $subject_id, $section_id, $ip);
     $ok = $stmt->execute();
     $stmt->close();
     $conn->close();
     return (bool) $ok;
 }
 
-/**
- * Generate full name from parts.
- */
 function make_full_name(string $first, string $middle, string $last): string {
     $parts = array_filter([$first, $middle, $last], fn($p) => $p !== '');
     return implode(' ', $parts);
 }
 
-/**
- * Generate auto password: ID + LastName (or random prefix if no ID yet).
- */
 function generate_password(string $lastName, ?int $id = null): string {
     $base = preg_replace('/[^a-zA-Z0-9]/', '', $lastName);
     if ($id) {
@@ -59,10 +43,6 @@ function generate_password(string $lastName, ?int $id = null): string {
     return rand(1000, 9999) . $base;
 }
 
-/**
- * Authenticate teacher by teacher_id or student_id.
- * Returns user array on success, null on failure.
- */
 function authenticate_user(string $username, string $password): ?array {
     $conn = db_connect();
     if (!$conn) return null;
@@ -115,92 +95,82 @@ function authenticate_user(string $username, string $password): ?array {
     return null;
 }
 
-/**
- * Get teacher's assigned sections with subjects for a given school_year and semester.
- */
 function get_teacher_assignments(int $teacherId, string $schoolYear, string $semester): array {
-    // Normalize to match storage and portal filtering.
     $schoolYear = normalize_school_year($schoolYear);
-    $semester   = normalize_semester($semester);
+    $semester = normalize_semester($semester);
 
     $conn = db_connect();
     if (!$conn) return [];
-    $stmt = $conn->prepare("
 
-        SELECT a.id as assignment_id, a.section_id, a.subject_id, a.school_year, a.semester,
-               s.name AS section_code, s.name as section_name,
-               sj.subject_code, sj.title as subject_title, sj.units,
-               sec.department
+    $stmt = $conn->prepare("SELECT a.id as assignment_id, a.section_id, a.subject_id, a.school_year, a.semester,
+            s.name AS section_code, s.name as section_name,
+            sj.subject_code, sj.title as subject_title, sj.units,
+            sec.department
         FROM assignments a
         LEFT JOIN sections s ON a.section_id = s.id
         LEFT JOIN subjects sj ON a.subject_id = sj.id
         LEFT JOIN sections sec ON a.section_id = sec.id
         WHERE a.teacher_id = ? AND a.school_year = ? AND a.semester = ?
-        ORDER BY s.name ASC, sj.subject_code ASC
-    ");
+        ORDER BY s.name ASC, sj.subject_code ASC");
     if (!$stmt) { $conn->close(); return []; }
+
     $stmt->bind_param('iss', $teacherId, $schoolYear, $semester);
     $stmt->execute();
     $res = $stmt->get_result();
     $rows = [];
     while ($r = $res->fetch_assoc()) $rows[] = $r;
+
     $stmt->close();
     $conn->close();
     return $rows;
 }
 
-/**
- * Get students in a section.
- */
 function get_section_students(int $sectionId): array {
     $conn = db_connect();
     if (!$conn) return [];
-    $stmt = $conn->prepare("
-        SELECT s.id, s.student_id, s.first_name, s.middle_name, s.last_name, s.name,
-               sec.name AS section_code, sec.name as section_name
+
+    $stmt = $conn->prepare("SELECT s.id, s.student_id, s.first_name, s.middle_name, s.last_name, s.name,
+            sec.name AS section_code, sec.name as section_name
         FROM students s
         LEFT JOIN sections sec ON s.section_id = sec.id
         WHERE s.section_id = ?
-        ORDER BY s.last_name ASC, s.first_name ASC
-    ");
+        ORDER BY s.last_name ASC, s.first_name ASC");
     if (!$stmt) { $conn->close(); return []; }
+
     $stmt->bind_param('i', $sectionId);
     $stmt->execute();
     $res = $stmt->get_result();
     $rows = [];
     while ($r = $res->fetch_assoc()) $rows[] = $r;
+
     $stmt->close();
     $conn->close();
     return $rows;
 }
 
-/**
- * Get existing grades for a student in a subject/section/term.
- */
 function get_grade(int $studentId, int $subjectId, string $schoolYear, string $semester): ?array {
     $conn = db_connect();
     if (!$conn) return null;
-    $stmt = $conn->prepare("
-        SELECT id, prelim, midterm, finals, average, gwa, remarks
+
+    $stmt = $conn->prepare("SELECT id, prelim, midterm, finals, average, gwa, remarks
         FROM grades
         WHERE student_id = ? AND subject_id = ? AND school_year = ? AND semester = ?
-        LIMIT 1
-    ");
+        LIMIT 1");
     if (!$stmt) { $conn->close(); return null; }
+
     $stmt->bind_param('iiss', $studentId, $subjectId, $schoolYear, $semester);
     $stmt->execute();
     $res = $stmt->get_result();
     $row = $res ? $res->fetch_assoc() : null;
+
     $stmt->close();
     $conn->close();
     return $row ?: null;
 }
 
-/**
- * Save or update a grade record.
- */
 function save_grade(int $studentId, int $subjectId, int $teacherId, int $sectionId,
-                    string $schoolYear, string $semester, ?float $prelim, ?float $midterm, ?float $finals): bool {
+    string $schoolYear, string $semester, ?float $prelim, ?float $midterm, ?float $finals): bool {
+
     $conn = db_connect();
     if (!$conn) return false;
 
@@ -214,38 +184,31 @@ function save_grade(int $studentId, int $subjectId, int $teacherId, int $section
     }
 
     $existing = get_grade($studentId, $subjectId, $schoolYear, $semester);
+
     if ($existing) {
-        $stmt = $conn->prepare("
-            UPDATE grades SET prelim = ?, midterm = ?, finals = ?, average = ?, gwa = ?, remarks = ?, teacher_id = ?
-            WHERE student_id = ? AND subject_id = ? AND school_year = ? AND semester = ?
-        ");
+        $stmt = $conn->prepare("UPDATE grades SET prelim = ?, midterm = ?, finals = ?, average = ?, gwa = ?, remarks = ?, teacher_id = ?
+            WHERE student_id = ? AND subject_id = ? AND school_year = ? AND semester = ?");
         if (!$stmt) { $conn->close(); return false; }
-        $stmt->bind_param('ddddssiiiss',
-            $prelim, $midterm, $finals, $avg, $gwa, $remarks, $teacherId,
-            $studentId, $subjectId, $schoolYear, $semester
-        );
+
+        $stmt->bind_param('ddddssiiiss', $prelim, $midterm, $finals, $avg, $gwa, $remarks, $teacherId,
+            $studentId, $subjectId, $schoolYear, $semester);
         $ok = $stmt->execute();
         $stmt->close();
     } else {
-        $stmt = $conn->prepare("
-            INSERT INTO grades (student_id, subject_id, teacher_id, section_id, school_year, semester, prelim, midterm, finals, average, gwa, remarks)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ");
+        $stmt = $conn->prepare("INSERT INTO grades (student_id, subject_id, teacher_id, section_id, school_year, semester, prelim, midterm, finals, average, gwa, remarks)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         if (!$stmt) { $conn->close(); return false; }
-        $stmt->bind_param('iiiisssddsss',
-            $studentId, $subjectId, $teacherId, $sectionId, $schoolYear, $semester,
-            $prelim, $midterm, $finals, $avg, $gwa, $remarks
-        );
+
+        $stmt->bind_param('iiiisssddsss', $studentId, $subjectId, $teacherId, $sectionId, $schoolYear, $semester,
+            $prelim, $midterm, $finals, $avg, $gwa, $remarks);
         $ok = $stmt->execute();
         $stmt->close();
     }
+
     $conn->close();
-    return (bool) $ok;
+    return (bool)$ok;
 }
 
-/**
- * Convert percentage to GWA equivalent.
- */
 function gwa_from_percentage(float $percentage): string {
     if ($percentage >= 97) return '1.00';
     if ($percentage >= 94) return '1.25';
@@ -259,21 +222,19 @@ function gwa_from_percentage(float $percentage): string {
     return '5.00';
 }
 
-/**
- * Get student's grades for display, filtered by year/semester.
- */
 function get_student_grades(int $studentId, string $schoolYear = '', string $semester = ''): array {
     $conn = db_connect();
     if (!$conn) return [];
-    $sql = "
-        SELECT g.school_year, g.semester, g.prelim, g.midterm, g.finals, g.average, g.gwa, g.remarks,
-               sj.subject_code, sj.title as subject_title, sj.units
+
+    $sql = "SELECT g.school_year, g.semester, g.prelim, g.midterm, g.finals, g.average, g.gwa, g.remarks,
+            sj.subject_code, sj.title as subject_title, sj.units
         FROM grades g
         LEFT JOIN subjects sj ON g.subject_id = sj.id
-        WHERE g.student_id = ?
-    ";
+        WHERE g.student_id = ?";
+
     $params = 'i';
     $vals = [$studentId];
+
     if ($schoolYear) {
         $sql .= " AND g.school_year = ?";
         $params .= 's';
@@ -284,7 +245,9 @@ function get_student_grades(int $studentId, string $schoolYear = '', string $sem
         $params .= 's';
         $vals[] = $semester;
     }
+
     $sql .= " ORDER BY g.school_year DESC, g.semester DESC, sj.subject_code ASC";
+
     $stmt = $conn->prepare($sql);
     if (!$stmt) { $conn->close(); return []; }
     $stmt->bind_param($params, ...$vals);
@@ -292,28 +255,26 @@ function get_student_grades(int $studentId, string $schoolYear = '', string $sem
     $res = $stmt->get_result();
     $rows = [];
     while ($r = $res->fetch_assoc()) $rows[] = $r;
+
     $stmt->close();
     $conn->close();
     return $rows;
 }
 
-/**
- * Get subjects assigned to a student's section for a given year/semester.
- * Returns subjects even if no grade record exists yet.
- */
 function get_student_assigned_subjects(int $studentId, string $schoolYear = '', string $semester = ''): array {
     $conn = db_connect();
     if (!$conn) return [];
-    $sql = "
-        SELECT DISTINCT sj.subject_code, sj.title, sj.units,
-               a.school_year, a.semester
+
+    $sql = "SELECT DISTINCT sj.subject_code, sj.title, sj.units,
+            a.school_year, a.semester
         FROM assignments a
         LEFT JOIN subjects sj ON a.subject_id = sj.id
         LEFT JOIN students s ON s.section_id = a.section_id
-        WHERE s.id = ?
-    ";
+        WHERE s.id = ?";
+
     $params = 'i';
     $vals = [$studentId];
+
     if ($schoolYear) {
         $sql .= " AND a.school_year = ?";
         $params .= 's';
@@ -324,7 +285,9 @@ function get_student_assigned_subjects(int $studentId, string $schoolYear = '', 
         $params .= 's';
         $vals[] = $semester;
     }
+
     $sql .= " ORDER BY sj.subject_code ASC";
+
     $stmt = $conn->prepare($sql);
     if (!$stmt) { $conn->close(); return []; }
     $stmt->bind_param($params, ...$vals);
@@ -332,19 +295,18 @@ function get_student_assigned_subjects(int $studentId, string $schoolYear = '', 
     $res = $stmt->get_result();
     $rows = [];
     while ($r = $res->fetch_assoc()) $rows[] = $r;
+
     $stmt->close();
     $conn->close();
     return $rows;
 }
 
-/**
- * Get available school years and semesters from assignments/grades.
- */
 function get_available_terms(int $userId, string $role): array {
     if ($role === 'teacher') {
         $conn = db_connect();
         if (!$conn) return ['years' => [], 'semesters' => []];
         $stmt = $conn->prepare("SELECT DISTINCT school_year, semester FROM assignments WHERE teacher_id = ? ORDER BY school_year DESC, semester DESC");
+        if (!$stmt) { $conn->close(); return ['years' => [], 'semesters' => []]; }
         $stmt->bind_param('i', $userId);
         $stmt->execute();
         $res = $stmt->get_result();
@@ -355,6 +317,7 @@ function get_available_terms(int $userId, string $role): array {
 
     $years = [];
     $semesters = [];
+
     if ($res) {
         while ($r = $res->fetch_assoc()) {
             if (!in_array($r['school_year'], $years, true)) $years[] = $r['school_year'];
@@ -377,8 +340,7 @@ function get_student_valid_terms(int $userId): array {
     $conn = db_connect();
     if (!$conn) return [];
 
-    $stmt = $conn->prepare("
-        SELECT DISTINCT a.school_year, a.semester
+    $stmt = $conn->prepare("SELECT DISTINCT a.school_year, a.semester
         FROM assignments a
         LEFT JOIN students s ON s.section_id = a.section_id
         WHERE s.id = ?
@@ -386,8 +348,7 @@ function get_student_valid_terms(int $userId): array {
         SELECT DISTINCT g.school_year, g.semester
         FROM grades g
         WHERE g.student_id = ?
-        ORDER BY school_year DESC, semester DESC
-    ");
+        ORDER BY school_year DESC, semester DESC");
     if (!$stmt) { $conn->close(); return []; }
 
     $stmt->bind_param('ii', $userId, $userId);
@@ -397,6 +358,7 @@ function get_student_valid_terms(int $userId): array {
     while ($r = $res->fetch_assoc()) {
         $pairs[] = ['year' => $r['school_year'], 'semester' => $r['semester']];
     }
+
     $stmt->close();
     $conn->close();
     return $pairs;
@@ -445,7 +407,6 @@ function get_first_available_student_term(array $pairs, string $preferredYear): 
     return $candidates[0] ?? null;
 }
 
-
 function get_term_options(): array {
     return [
         'years' => ['2025-2026', '2026-2027'],
@@ -477,10 +438,6 @@ function normalize_semester($semester): string {
     return $semester;
 }
 
-/**
- * Global filter helper: resolves selected school year + semester from GET/session
- * and normalizes values to reduce “mixing” across terms.
- */
 function get_global_term(): array {
     $options = get_term_options();
     $yearCandidates = array_filter([
@@ -502,47 +459,19 @@ function get_global_term(): array {
     ], fn($v) => normalize_semester($v) !== '');
 
     $year = normalize_school_year(reset($yearCandidates));
-    $sem  = normalize_semester(reset($semCandidates));
+    $sem = normalize_semester(reset($semCandidates));
 
     if (!in_array($year, $options['years'], true)) $year = $options['years'][0] ?? '2025-2026';
     if (!in_array($sem, $options['semesters'], true)) $sem = $options['semesters'][0] ?? '1st Semester';
 
     $_SESSION['global_year'] = $year;
-    $_SESSION['global_sem']  = $sem;
-    $_SESSION['teacher_sy']  = $year;
+    $_SESSION['global_sem'] = $sem;
+    $_SESSION['teacher_sy'] = $year;
     $_SESSION['teacher_sem'] = $sem;
     $_SESSION['student_filter_year'] = $year;
-    $_SESSION['student_filter_sem']  = $sem;
+    $_SESSION['student_filter_sem'] = $sem;
 
     return ['year' => $year, 'semester' => $sem];
-}
-
-
-
-
-
-/**
- * Create teacher account with auto-generated password.
- */
-function create_teacher(string $firstName, string $middleName, string $lastName, ?string $department = null): array {
-    $conn = db_connect();
-    if (!$conn) return ['success' => false, 'error' => 'Database connection failed'];
-    $fullName = make_full_name($firstName, $middleName, $lastName);
-    $stmt = $conn->prepare("INSERT INTO teachers (first_name, middle_name, last_name, name, department) VALUES (?, ?, ?, ?, ?)");
-    if (!$stmt) { $conn->close(); return ['success' => false, 'error' => $conn->error]; }
-    $stmt->bind_param('sssss', $firstName, $middleName, $lastName, $fullName, $department);
-    if (!$stmt->execute()) { $err = $stmt->error; $stmt->close(); $conn->close(); return ['success' => false, 'error' => $err]; }
-    $newId = $conn->insert_id;
-    $code = sprintf('T-%03d', $newId);
-    $upd = $conn->prepare("UPDATE teachers SET teacher_id = ? WHERE id = ?");
-    if ($upd) { $upd->bind_param('si', $code, $newId); $upd->execute(); $upd->close(); }
-    $password = generate_password($lastName, $newId);
-    $hash = password_hash($password, PASSWORD_DEFAULT);
-    $upd2 = $conn->prepare("UPDATE teachers SET password_hash = ? WHERE id = ?");
-    if ($upd2) { $upd2->bind_param('si', $hash, $newId); $upd2->execute(); $upd2->close(); }
-    $stmt->close();
-    $conn->close();
-    return ['success' => true, 'id' => $newId, 'teacher_id' => $code, 'password' => $password, 'name' => $fullName];
 }
 
 function get_departments(): array {
@@ -560,199 +489,356 @@ function get_departments(): array {
     );
 
     $res = $conn->query("SELECT id, department_code, name FROM departments ORDER BY name ASC");
-    $departments = [];
+    $rows = [];
     if ($res) {
-        while ($row = $res->fetch_assoc()) {
-            $departments[] = $row;
-        }
+        while ($row = $res->fetch_assoc()) $rows[] = $row;
         $res->free();
     }
     $conn->close();
-
-    return $departments;
+    return $rows;
 }
 
-/**
- * Create student account with auto-generated password.
- */
-function create_student(string $firstName, string $middleName, string $lastName, ?int $sectionId = null, ?string $department = null): array {
+function get_all_deadlines(string $schoolYear, string $semester): array {
     $conn = db_connect();
-    if (!$conn) return ['success' => false, 'error' => 'Database connection failed'];
-    $fullName = make_full_name($firstName, $middleName, $lastName);
-    $stmt = $conn->prepare("INSERT INTO students (first_name, middle_name, last_name, name, section_id, department) VALUES (?, ?, ?, ?, ?, ?)");
+    if (!$conn) return [];
+
+    $stmt = $conn->prepare("SELECT id, school_year, semester, grading_period, deadline, status, extended_until, created_at, updated_at
+        FROM submission_deadlines
+        WHERE school_year = ? AND semester = ?
+        ORDER BY FIELD(grading_period, 'prelim', 'midterm', 'finals')");
+    if (!$stmt) { $conn->close(); return []; }
+
+    $stmt->bind_param('ss', $schoolYear, $semester);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $rows = [];
+    while ($r = $res->fetch_assoc()) $rows[] = $r;
+    $stmt->close();
+    $conn->close();
+    return $rows;
+}
+
+function get_deadline_status(string $schoolYear, string $semester, string $gradingPeriod): string {
+    $conn = db_connect();
+    if (!$conn) return 'closed';
+
+    $stmt = $conn->prepare("SELECT status, deadline, extended_until FROM submission_deadlines
+        WHERE school_year = ? AND semester = ? AND grading_period = ? LIMIT 1");
+    if (!$stmt) { $conn->close(); return 'closed'; }
+
+    $stmt->bind_param('sss', $schoolYear, $semester, $gradingPeriod);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $row = $res ? $res->fetch_assoc() : null;
+    $stmt->close();
+    $conn->close();
+
+    if (!$row) return 'closed';
+
+    $status = $row['status'];
+    if ($status === 'extended' && $row['extended_until']) {
+        $now = new DateTime();
+        $exp = new DateTime($row['extended_until']);
+        if ($now > $exp) {
+            return 'closed';
+        }
+    }
+
+    if ($status === 'open' || $status === 'extended') {
+        $now = new DateTime();
+        $dl = new DateTime($row['deadline']);
+        if ($now > $dl && $status !== 'extended') {
+            return 'closed';
+        }
+    }
+
+    return $status;
+}
+
+function get_deadline(string $schoolYear, string $semester, string $gradingPeriod): ?array {
+    $conn = db_connect();
+    if (!$conn) return null;
+
+    $stmt = $conn->prepare("SELECT id, school_year, semester, grading_period, deadline, status, extended_until, created_at, updated_at
+        FROM submission_deadlines
+        WHERE school_year = ? AND semester = ? AND grading_period = ? LIMIT 1");
+    if (!$stmt) { $conn->close(); return null; }
+
+    $stmt->bind_param('sss', $schoolYear, $semester, $gradingPeriod);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $row = $res ? $res->fetch_assoc() : null;
+    $stmt->close();
+    $conn->close();
+
+    return $row ?: null;
+}
+
+function set_deadline(string $schoolYear, string $semester, string $gradingPeriod, ?string $deadline, string $status, ?string $extendedUntil = null): bool {
+    $conn = db_connect();
+    if (!$conn) return false;
+
+    $schoolYear = normalize_school_year($schoolYear);
+    $semester = normalize_semester($semester);
+    $gradingPeriod = strtolower(trim($gradingPeriod));
+    if (!in_array($gradingPeriod, ['prelim', 'midterm', 'finals'], true)) {
+        $conn->close();
+        return false;
+    }
+
+    $check = $conn->prepare("SELECT id FROM submission_deadlines WHERE school_year = ? AND semester = ? AND grading_period = ? LIMIT 1");
+    if (!$check) { $conn->close(); return false; }
+    $check->bind_param('sss', $schoolYear, $semester, $gradingPeriod);
+    $check->execute();
+    $res = $check->get_result();
+    $exists = $res && $res->fetch_assoc();
+    $check->close();
+
+    if ($exists) {
+        $stmt = $conn->prepare("UPDATE submission_deadlines SET deadline = ?, status = ?, extended_until = ?, updated_at = NOW()
+            WHERE school_year = ? AND semester = ? AND grading_period = ?");
+        if (!$stmt) { $conn->close(); return false; }
+        $stmt->bind_param('ssssss', $deadline, $status, $extendedUntil, $schoolYear, $semester, $gradingPeriod);
+        $ok = $stmt->execute();
+        $stmt->close();
+    } else {
+        $stmt = $conn->prepare("INSERT INTO submission_deadlines (school_year, semester, grading_period, deadline, status, extended_until, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())");
+        if (!$stmt) { $conn->close(); return false; }
+        $stmt->bind_param('ssssss', $schoolYear, $semester, $gradingPeriod, $deadline, $status, $extendedUntil);
+        $ok = $stmt->execute();
+        $stmt->close();
+    }
+
+    $conn->close();
+    return (bool)$ok;
+}
+
+function is_period_open_for_teacher(int $teacherId, string $schoolYear, string $semester, string $gradingPeriod): bool {
+    $status = get_deadline_status($schoolYear, $semester, $gradingPeriod);
+    if ($status === 'open' || $status === 'extended') {
+        return true;
+    }
+
+    $conn = db_connect();
+    if (!$conn) return false;
+
+    $stmt = $conn->prepare("SELECT id FROM permission_grants
+        WHERE teacher_id = ? AND school_year = ? AND semester = ? AND grading_period = ?
+            AND is_active = 1 AND (expires_at IS NULL OR expires_at > NOW())
+        LIMIT 1");
+    if (!$stmt) { $conn->close(); return false; }
+
+    $stmt->bind_param('isss', $teacherId, $schoolYear, $semester, $gradingPeriod);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $hasGrant = $res && $res->fetch_assoc();
+    $stmt->close();
+    $conn->close();
+
+    return (bool)$hasGrant;
+}
+
+function create_notification(int $userId, string $userRole, string $title, string $message, string $type = 'info', ?string $link = null): bool {
+    $conn = db_connect();
+    if (!$conn) return false;
+
+    $stmt = $conn->prepare("INSERT INTO notifications (user_id, user_role, title, message, type, link)
+        VALUES (?, ?, ?, ?, ?, ?)");
+    if (!$stmt) { $conn->close(); return false; }
+
+    $stmt->bind_param('isssss', $userId, $userRole, $title, $message, $type, $link);
+    $ok = $stmt->execute();
+    $stmt->close();
+    $conn->close();
+    return (bool)$ok;
+}
+
+function get_teacher_notifications(int $teacherId): array {
+    $conn = db_connect();
+    if (!$conn) return [];
+
+    $stmt = $conn->prepare("SELECT id, title, message, type, link, is_read, created_at
+        FROM notifications
+        WHERE user_id = ? AND user_role = 'teacher'
+        ORDER BY created_at DESC
+        LIMIT 50");
+    if (!$stmt) { $conn->close(); return []; }
+
+    $stmt->bind_param('i', $teacherId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $rows = [];
+    while ($r = $res->fetch_assoc()) $rows[] = $r;
+    $stmt->close();
+    $conn->close();
+    return $rows;
+}
+
+function save_grade_change_request(int $teacherId, int $sectionId, int $subjectId, string $schoolYear, string $semester, string $gradingPeriod, string $reason): ?int {
+    $conn = db_connect();
+    if (!$conn) return null;
+
+    $stmt = $conn->prepare("INSERT INTO grade_change_requests (teacher_id, section_id, subject_id, school_year, semester, grading_period, reason, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())");
+    if (!$stmt) { $conn->close(); return null; }
+
+    $stmt->bind_param('iiissss', $teacherId, $sectionId, $subjectId, $schoolYear, $semester, $gradingPeriod, $reason);
+    $ok = $stmt->execute();
+    $requestId = $conn->insert_id;
+    $stmt->close();
+    $conn->close();
+
+    if ($ok && $requestId) {
+        $teacher = db_query("SELECT first_name, middle_name, last_name FROM teachers WHERE id = " . intval($teacherId) . " LIMIT 1");
+        $teacherName = $teacher ? ($teacher->fetch_assoc()['first_name'] ?? '') : '';
+        audit_log('grade_change_request_submitted', $teacherId, $gradingPeriod, $schoolYear, $semester, $requestId, $teacherId, $subjectId, $sectionId);
+        create_notification(0, 'admin', 'New Grade Change Request', "Teacher {$teacherName} requested permission for {$gradingPeriod} grades in {$schoolYear} {$semester}.", 'info', 'grade_requests.php');
+    }
+
+    return $ok ? $requestId : null;
+}
+
+function update_grade_change_request_status(int $requestId, string $status, ?int $adminId, ?string $adminResponse, ?string $expiresAt = null): bool {
+    $conn = db_connect();
+    if (!$conn) return false;
+
+    $setParts = ["status = ?", "admin_id = ?", "admin_response = ?", "updated_at = NOW()"];
+    $types = 'sis';
+    $vals = [$status, $adminId, $adminResponse];
+
+    if ($expiresAt !== null) {
+        $setParts[] = "expires_at = ?";
+        $types .= 's';
+        $vals[] = $expiresAt;
+    }
+
+    $sql = "UPDATE grade_change_requests SET " . implode(', ', $setParts) . " WHERE id = ?";
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) { $conn->close(); return false; }
+
+    $vals[] = $requestId;
+    $types .= 'i';
+    $stmt->bind_param($types, ...$vals);
+    $ok = $stmt->execute();
+    $stmt->close();
+
+    if ($ok) {
+        $req = db_query("SELECT teacher_id, school_year, semester, grading_period FROM grade_change_requests WHERE id = " . intval($requestId) . " LIMIT 1");
+        if ($req && $row = $req->fetch_assoc()) {
+            $teacherId = (int)($row['teacher_id'] ?? 0);
+            $schoolYear = $row['school_year'] ?? '';
+            $semester = $row['semester'] ?? '';
+            $gradingPeriod = $row['grading_period'] ?? '';
+
+            if ($status === 'approved') {
+                if ($expiresAt) {
+                    $grant = $conn->prepare("INSERT INTO permission_grants (teacher_id, school_year, semester, grading_period, expires_at, is_active)
+                        VALUES (?, ?, ?, ?, ?, 1)");
+                    if ($grant) {
+                        $grant->bind_param('issss', $teacherId, $schoolYear, $semester, $gradingPeriod, $expiresAt);
+                        $grant->execute();
+                        $grant->close();
+                    }
+                }
+
+                $expiresLabel = $expiresAt ? (' until ' . date('M d, Y h:i A', strtotime($expiresAt))) : 'permanently';
+                create_notification($teacherId, 'teacher', 'Request Approved',
+                    "Your {$gradingPeriod} grade editing request for {$schoolYear} {$semester} has been approved ({$expiresLabel}).", 'success');
+            } else {
+                create_notification($teacherId, 'teacher', 'Request Rejected',
+                    "Your {$gradingPeriod} grade editing request for {$schoolYear} {$semester} has been rejected.", 'error');
+            }
+
+            audit_log('grade_change_request_' . $status, $adminId ?? 0, $gradingPeriod, $schoolYear, $semester, $requestId, $teacherId, null, null);
+        }
+        if ($req) $req->free();
+    }
+
+    $conn->close();
+    return (bool)$ok;
+}
+
+function revoke_expired_permissions(): bool {
+    $conn = db_connect();
+    if (!$conn) return false;
+
+    $stmt = $conn->prepare("UPDATE permission_grants SET is_active = 0, revoked_at = NOW()
+        WHERE is_active = 1 AND expires_at IS NOT NULL AND expires_at <= NOW()");
+    if (!$stmt) { $conn->close(); return false; }
+    $ok = $stmt->execute();
+    $stmt->close();
+
+    if ($ok) {
+        $revoked = $conn->affected_rows;
+        if ($revoked > 0) {
+            $res = $conn->query("SELECT teacher_id, school_year, semester, grading_period FROM permission_grants
+                WHERE is_active = 0 AND revoked_at >= NOW() - INTERVAL 1 MINUTE LIMIT 100");
+            if ($res) {
+                while ($row = $res->fetch_assoc()) {
+                    $teacherId = (int)($row['teacher_id'] ?? 0);
+                    $gradingPeriod = $row['grading_period'] ?? '';
+                    $schoolYear = $row['school_year'] ?? '';
+                    $semester = $row['semester'] ?? '';
+                    create_notification($teacherId, 'teacher', 'Permission Expired',
+                        "Your temporary editing permission for {$gradingPeriod} ({$schoolYear} {$semester}) has expired.", 'warning');
+                    audit_log('permission_expired', $teacherId, $gradingPeriod, $schoolYear, $semester, null, $teacherId, null, null);
+                }
+                $res->free();
+            }
+        }
+    }
+
+    $conn->close();
+    return (bool)$ok;
+}
+
+function create_teacher(string $firstName, ?string $middleName, string $lastName, ?string $department): array {
+    $conn = db_connect();
+    if (!$conn) return ['success' => false, 'error' => 'Database connection failed.'];
+
+    $stmt = $conn->prepare("INSERT INTO teachers (first_name, middle_name, last_name, department) VALUES (?, ?, ?, ?)");
     if (!$stmt) { $conn->close(); return ['success' => false, 'error' => $conn->error]; }
-    $stmt->bind_param('ssssis', $firstName, $middleName, $lastName, $fullName, $sectionId, $department);
-    if (!$stmt->execute()) { $err = $stmt->error; $stmt->close(); $conn->close(); return ['success' => false, 'error' => $err]; }
-    $newId = $conn->insert_id;
-    $code = sprintf('S-%03d', $newId);
-    $upd = $conn->prepare("UPDATE students SET student_id = ? WHERE id = ?");
-    if ($upd) { $upd->bind_param('si', $code, $newId); $upd->execute(); $upd->close(); }
-    $password = strtoupper(substr($firstName, 0, 1)) . $lastName;
-    $hash = password_hash($password, PASSWORD_DEFAULT);
-    $upd2 = $conn->prepare("UPDATE students SET password_hash = ? WHERE id = ?");
-    if ($upd2) { $upd2->bind_param('si', $hash, $newId); $upd2->execute(); $upd2->close(); }
+
+    $stmt->bind_param('ssss', $firstName, $middleName, $lastName, $department);
+    $ok = $stmt->execute();
+    $id = $conn->insert_id;
     $stmt->close();
     $conn->close();
-    return ['success' => true, 'id' => $newId, 'student_id' => $code, 'password' => $password, 'name' => $fullName];
+
+    if ($ok) {
+        return ['success' => true, 'id' => $id];
+    }
+
+    return ['success' => false, 'error' => 'Failed to create teacher.'];
 }
 
-/**
- * Update teacher record.
- */
-function update_teacher(int $id, string $firstName, string $middleName, string $lastName, ?string $department = null, ?string $password = null): bool {
+function update_teacher(int $teacherId, string $firstName, ?string $middleName, string $lastName, ?string $department, ?string $email): bool {
     $conn = db_connect();
     if (!$conn) return false;
-    $fullName = make_full_name($firstName, $middleName, $lastName);
-    if ($password) {
-        $hash = password_hash($password, PASSWORD_DEFAULT);
-        $stmt = $conn->prepare("UPDATE teachers SET first_name = ?, middle_name = ?, last_name = ?, name = ?, department = ?, password_hash = ? WHERE id = ?");
-        if (!$stmt) { $conn->close(); return false; }
-        $stmt->bind_param('ssssssi', $firstName, $middleName, $lastName, $fullName, $department, $hash, $id);
-    } else {
-        $stmt = $conn->prepare("UPDATE teachers SET first_name = ?, middle_name = ?, last_name = ?, name = ?, department = ? WHERE id = ?");
-        if (!$stmt) { $conn->close(); return false; }
-        $stmt->bind_param('sssssi', $firstName, $middleName, $lastName, $fullName, $department, $id);
-    }
+
+    $stmt = $conn->prepare("UPDATE teachers SET first_name = ?, middle_name = ?, last_name = ?, department = ? WHERE id = ?");
+    if (!$stmt) { $conn->close(); return false; }
+
+    $stmt->bind_param('ssssi', $firstName, $middleName, $lastName, $department, $teacherId);
     $ok = $stmt->execute();
     $stmt->close();
     $conn->close();
-    return (bool) $ok;
+
+    return (bool)$ok;
 }
 
-/**
- * Update student record.
- */
-function update_student(int $id, string $firstName, string $middleName, string $lastName, ?int $sectionId = null, ?string $department = null, ?string $password = null): bool {
+function delete_teacher(int $teacherId): bool {
     $conn = db_connect();
     if (!$conn) return false;
-    $fullName = make_full_name($firstName, $middleName, $lastName);
-    if ($password) {
-        $hash = password_hash($password, PASSWORD_DEFAULT);
-        $stmt = $conn->prepare("UPDATE students SET first_name = ?, middle_name = ?, last_name = ?, name = ?, section_id = ?, department = ?, password_hash = ? WHERE id = ?");
-        if (!$stmt) { $conn->close(); return false; }
-        $stmt->bind_param('ssssissi', $firstName, $middleName, $lastName, $fullName, $sectionId, $department, $hash, $id);
-    } else {
-        $stmt = $conn->prepare("UPDATE students SET first_name = ?, middle_name = ?, last_name = ?, name = ?, section_id = ?, department = ? WHERE id = ?");
-        if (!$stmt) { $conn->close(); return false; }
-        $stmt->bind_param('ssssisi', $firstName, $middleName, $lastName, $fullName, $sectionId, $department, $id);
-    }
-    $ok = $stmt->execute();
-    $stmt->close();
-    $conn->close();
-    return (bool) $ok;
-}
 
-/**
- * Delete a teacher.
- */
-function delete_teacher(int $id): bool {
-    $conn = db_connect();
-    if (!$conn) return false;
     $stmt = $conn->prepare("DELETE FROM teachers WHERE id = ?");
     if (!$stmt) { $conn->close(); return false; }
-    $stmt->bind_param('i', $id);
+
+    $stmt->bind_param('i', $teacherId);
     $ok = $stmt->execute();
     $stmt->close();
     $conn->close();
-    return (bool) $ok;
-}
 
-function delete_subject(int $id): bool {
-    $conn = db_connect();
-    if (!$conn) return false;
-
-    $stmt = $conn->prepare("DELETE FROM assignments WHERE subject_id = ?");
-    if (!$stmt) { $conn->close(); return false; }
-    $stmt->bind_param('i', $id);
-    $stmt->execute();
-    $stmt->close();
-
-    $stmt = $conn->prepare("DELETE FROM grades WHERE subject_id = ?");
-    if (!$stmt) { $conn->close(); return false; }
-    $stmt->bind_param('i', $id);
-    $stmt->execute();
-    $stmt->close();
-
-    $stmt = $conn->prepare("DELETE FROM subjects WHERE id = ? LIMIT 1");
-    if (!$stmt) { $conn->close(); return false; }
-    $stmt->bind_param('i', $id);
-    $ok = $stmt->execute();
-    $stmt->close();
-    $conn->close();
-    return (bool) $ok;
-}
-
-/**
- * Delete a student.
- */
-function delete_student(int $id): bool {
-    $conn = db_connect();
-    if (!$conn) return false;
-    $stmt = $conn->prepare("DELETE FROM students WHERE id = ?");
-    if (!$stmt) { $conn->close(); return false; }
-    $stmt->bind_param('i', $id);
-    $ok = $stmt->execute();
-    $stmt->close();
-    $conn->close();
-    return (bool) $ok;
-}
-
-/**
- * Get all teachers for dropdowns.
- */
-function get_all_teachers(): array {
-    $conn = db_connect();
-    if (!$conn) return [];
-    $res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name, name, department FROM teachers ORDER BY last_name ASC, first_name ASC");
-    if (!$res) { $conn->close(); return []; }
-    $rows = [];
-    while ($r = $res->fetch_assoc()) $rows[] = $r;
-    $res->free();
-    $conn->close();
-    return $rows;
-}
-
-/**
- * Get all students for dropdowns.
- */
-function get_all_students(): array {
-    $conn = db_connect();
-    if (!$conn) return [];
-    $res = $conn->query("SELECT s.id, s.student_id, s.first_name, s.middle_name, s.last_name, s.name, s.section_id, sec.name AS section_code, sec.name as section_name FROM students s LEFT JOIN sections sec ON s.section_id = sec.id ORDER BY s.last_name ASC, s.first_name ASC");
-    if (!$res) { $conn->close(); return []; }
-    $rows = [];
-    while ($r = $res->fetch_assoc()) $rows[] = $r;
-    $res->free();
-    $conn->close();
-    return $rows;
-}
-
-/**
- * Get all sections.
- */
-function get_all_sections(): array {
-    $conn = db_connect();
-    if (!$conn) return [];
-    $res = $conn->query("SELECT id, name AS section_code, name, department, school_year, semester FROM sections ORDER BY created_at DESC");
-    if (!$res) { $conn->close(); return []; }
-    $rows = [];
-    while ($r = $res->fetch_assoc()) $rows[] = $r;
-    $res->free();
-    $conn->close();
-    return $rows;
-}
-
-/**
- * Get all subjects.
- */
-function get_all_subjects(): array {
-    $conn = db_connect();
-    if (!$conn) return [];
-    $res = $conn->query("SELECT id, subject_code, title, school_year, semester FROM subjects ORDER BY subject_code ASC");
-    if (!$res) { $conn->close(); return []; }
-    $rows = [];
-    while ($r = $res->fetch_assoc()) $rows[] = $r;
-    $res->free();
-    $conn->close();
-    return $rows;
+    return (bool)$ok;
 }

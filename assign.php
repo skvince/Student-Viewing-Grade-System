@@ -1,7 +1,9 @@
 <?php
 
 require_once __DIR__ . '/inc/functions.php';
-session_start();
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
 if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
     header('Location: login.php');
     exit;
@@ -488,6 +490,8 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
         <a href="section.php"> <i class="fa-solid fa-book-open"></i> Section &amp; Dept</a>
         <a href="students.php"><i class="fa-solid fa-user-graduate"></i> Students</a>
         <a href="assign.php" class="active"><i class="fa-solid fa-gear"></i> Assign Module</a>
+        <a href="deadline_manager.php"><i class="fa-solid fa-calendar-check"></i> Grade Deadlines</a>
+        <a href="grade_requests.php"><i class="fa-solid fa-clipboard-check"></i> Grade Requests</a>
       </nav>
     </div>
     <a href="login.php?logout=1" class="logout-btn"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
@@ -517,12 +521,6 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
     <h1 class="view-title">Assign Module</h1>
     <p class="view-subtitle">Manage structural modules and assign entities</p>
 
-    <!-- ═══════════════════════════════════════════════════════
-         PANEL 1 — CREATE / MANAGE SUBJECTS
-         FIX: form now POSTs to PHP via name="save_subject".
-              Each field has a name= attribute.
-              Subjects persist in the DB across page reloads.
-    ════════════════════════════════════════════════════════ -->
     <div class="panel-block" id="subject-block-container">
       <div class="block-header">
         <h2 class="block-title">Create / Manage Subjects</h2>

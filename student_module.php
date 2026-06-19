@@ -1,6 +1,8 @@
 <?php require_once __DIR__ . '/inc/functions.php'; ?>
 <?php
-session_start();
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
 if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'student') {
     if (isset($_GET['student_id'])) {
         $_SESSION['user_role'] = 'student';

@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/inc/functions.php';
-session_start();
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
 if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
     header('Location: login.php');
     exit;
@@ -904,6 +906,8 @@ if ($conn) {
         <a href="section.php" class="active"><i class="fa-solid fa-book-open"></i> Section & Dept</a>
         <a href="students.php"><i class="fa-solid fa-user-graduate"></i> Students</a>
         <a href="assign.php"><i class="fa-solid fa-gear"></i> Assign Module</a>
+        <a href="deadline_manager.php"><i class="fa-solid fa-calendar-check"></i> Grade Deadlines</a>
+        <a href="grade_requests.php"><i class="fa-solid fa-clipboard-check"></i> Grade Requests</a>
       </nav>
     </div>
     <a href="login.php?logout=1" class="logout-btn"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>

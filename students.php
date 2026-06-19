@@ -1,7 +1,9 @@
   <?php require_once __DIR__ . '/inc/functions.php'; ?>
 <?php
 ob_start();
-session_start();
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
 $term = get_global_term();
 $selectedYear = $term['year'];
 $selectedSem  = $term['semester'];
@@ -921,6 +923,8 @@ $studentSaveError = '';
             <a href="section.php" class="nav-link"><i class="fa-solid fa-book-open"></i> Section & Dept</a>
             <a href="students.php" class="nav-link active"><i class="fa-solid fa-user-graduate"></i> Students</a>
             <a href="assign.php" class="nav-link"><i class="fa-solid fa-gear"></i> Assign Module</a>
+            <a href="deadline_manager.php"><i class="fa-solid fa-calendar-check"></i> Grade Deadlines</a>
+        <a href="grade_requests.php"><i class="fa-solid fa-clipboard-check"></i> Grade Requests</a>
           </nav>
         </div>
         <a href="login.php?logout=1" class="logout-btn">

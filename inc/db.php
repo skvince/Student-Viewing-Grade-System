@@ -262,4 +262,103 @@ SQL,
         $conn->query("ALTER TABLE teachers DROP INDEX uniq_teacher_email");
     }
     if ($idxRes) $idxRes->free();
+
+    $auditAlters = [];
+    $auditCols = [];
+    $ac = $conn->query("SHOW COLUMNS FROM audit_logs");
+    if ($ac) {
+        while ($r = $ac->fetch_assoc()) $auditCols[] = $r['Field'];
+        $ac->free();
+    }
+    foreach (['academic_year', 'semester', 'grading_period', 'request_id', 'teacher_id', 'subject_id', 'section_id'] as $col) {
+        if (!in_array($col, $auditCols, true)) {
+            $auditAlters[] = "ADD COLUMN {$col} VARCHAR(20) DEFAULT NULL AFTER action";
+            if (in_array($col, ['request_id', 'teacher_id', 'subject_id', 'section_id'], true)) {
+                $auditAlters[] = "ADD INDEX idx_audit_{$col} ({$col})";
+            }
+        }
+    }
+    if ($auditAlters) {
+        $conn->query('ALTER TABLE audit_logs ' . implode(', ', $auditAlters));
+    }
+
+    $dlCheck = $conn->query("SHOW TABLES LIKE 'submission_deadlines'");
+    if (!$dlCheck || $dlCheck->num_rows === 0) {
+        $conn->query("CREATE TABLE IF NOT EXISTS submission_deadlines (
+          id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          school_year VARCHAR(20) NOT NULL,
+          semester VARCHAR(20) NOT NULL,
+          grading_period ENUM('prelim','midterm','finals') NOT NULL,
+          deadline DATETIME NOT NULL,
+          status ENUM('open','closed','extended') NOT NULL DEFAULT 'open',
+          extended_until DATETIME DEFAULT NULL,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY uniq_deadline (school_year, semester, grading_period)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    }
+    if ($dlCheck) $dlCheck->free();
+
+    $reqCheck = $conn->query("SHOW TABLES LIKE 'grade_change_requests'");
+    if (!$reqCheck || $reqCheck->num_rows === 0) {
+        $conn->query("CREATE TABLE IF NOT EXISTS grade_change_requests (
+          id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          teacher_id INT UNSIGNED NOT NULL,
+          section_id INT UNSIGNED NOT NULL,
+          subject_id INT UNSIGNED NOT NULL,
+          school_year VARCHAR(20) NOT NULL,
+          semester VARCHAR(20) NOT NULL,
+          grading_period ENUM('prelim','midterm','finals') NOT NULL,
+          reason TEXT NOT NULL,
+          status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+          admin_response TEXT DEFAULT NULL,
+          admin_id INT UNSIGNED DEFAULT NULL,
+          expires_at DATETIME DEFAULT NULL,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_request_teacher (teacher_id),
+          INDEX idx_request_status (status),
+          CONSTRAINT fk_request_teacher FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE,
+          CONSTRAINT fk_request_section FOREIGN KEY (section_id) REFERENCES sections (id) ON DELETE CASCADE,
+          CONSTRAINT fk_request_subject FOREIGN KEY (subject_id) REFERENCES subjects (id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    }
+    if ($reqCheck) $reqCheck->free();
+
+    $permCheck = $conn->query("SHOW TABLES LIKE 'permission_grants'");
+    if (!$permCheck || $permCheck->num_rows === 0) {
+        $conn->query("CREATE TABLE IF NOT EXISTS permission_grants (
+          id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          teacher_id INT UNSIGNED NOT NULL,
+          school_year VARCHAR(20) NOT NULL,
+          semester VARCHAR(20) NOT NULL,
+          grading_period ENUM('prelim','midterm','finals') NOT NULL,
+          granted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          expires_at DATETIME DEFAULT NULL,
+          revoked_at DATETIME DEFAULT NULL,
+          is_active TINYINT(1) NOT NULL DEFAULT 1,
+          INDEX idx_permission_teacher (teacher_id),
+          INDEX idx_permission_active (is_active),
+          CONSTRAINT fk_permission_teacher FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    }
+    if ($permCheck) $permCheck->free();
+
+    $notifCheck = $conn->query("SHOW TABLES LIKE 'notifications'");
+    if (!$notifCheck || $notifCheck->num_rows === 0) {
+        $conn->query("CREATE TABLE IF NOT EXISTS notifications (
+          id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          user_id INT UNSIGNED NOT NULL,
+          user_role ENUM('teacher','admin') NOT NULL,
+          title VARCHAR(255) NOT NULL,
+          message TEXT NOT NULL,
+          type ENUM('info','success','warning','error') NOT NULL DEFAULT 'info',
+          link VARCHAR(255) DEFAULT NULL,
+          is_read TINYINT(1) NOT NULL DEFAULT 0,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          INDEX idx_notification_user (user_id),
+          INDEX idx_notification_read (is_read)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    }
+    if ($notifCheck) $notifCheck->free();
 }
