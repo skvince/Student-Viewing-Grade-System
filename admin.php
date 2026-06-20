@@ -5,7 +5,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
     header('Location: login.php');
-    exit;
+    exit;   \
 }
 
 $term = get_global_term();
