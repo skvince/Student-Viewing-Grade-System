@@ -285,9 +285,16 @@ if ($conn) {
     $escapedSem  = $conn->real_escape_string($selectedSem);
 
     // Teachers
-    $res = $conn->query("SELECT id, teacher_id, name FROM teachers ORDER BY name ASC");
+    // FIX: the `teachers` table has first_name/middle_name/last_name, not a
+    // single `name` column. The old query (`SELECT id, teacher_id, name ...`)
+    // referenced a non-existent column, so it silently failed and left the
+    // "Select Teacher" dropdown empty.
+    $res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name FROM teachers ORDER BY last_name ASC, first_name ASC");
     if ($res) {
-        while ($row = $res->fetch_assoc()) $teachers[] = $row;
+        while ($row = $res->fetch_assoc()) {
+            $row['name'] = trim($row['first_name'] . ' ' . ($row['middle_name'] ? $row['middle_name'] . ' ' : '') . $row['last_name']);
+            $teachers[] = $row;
+        }
         $res->free();
     }
 
@@ -308,13 +315,15 @@ if ($conn) {
     }
 
     // Assignments — JOIN to get live subject info; filtered by global term
+    // FIX: teachers table has no `name` column — build it from
+    // first_name/middle_name/last_name via CONCAT, same as elsewhere.
     $res = $conn->query(
         "SELECT
              a.id           AS assignment_id,
              a.subject_id,
              a.school_year,
              a.semester,
-             t.name         AS teacher_name,
+             TRIM(CONCAT(t.first_name, ' ', IF(t.middle_name <> '', CONCAT(t.middle_name, ' '), ''), t.last_name)) AS teacher_name,
              s.name AS section_name,
              sj.subject_code,
              sj.title       AS subject_title
@@ -672,7 +681,7 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
                 <option value="" disabled selected hidden>Select teacher...</option>
                 <?php foreach ($teachers as $t): ?>
                   <option value="<?= intval($t['id']) ?>">
-                    <?= htmlspecialchars($t['name'] . ' (' . $t['teacher_id'] . ')') ?>
+                    <?= htmlspecialchars($t['name']) ?>
                   </option>
                 <?php endforeach; ?>
               </select>
@@ -809,7 +818,7 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
                 <option value="" disabled selected hidden>Select teacher...</option>
                 <?php foreach ($teachers as $t): ?>
                   <option value="<?= intval($t['id']) ?>">
-                    <?= htmlspecialchars($t['name'] . ' (' . $t['teacher_id'] . ')') ?>
+                    <?= htmlspecialchars($t['name']) ?>
                   </option>
                 <?php endforeach; ?>
               </select>

@@ -921,22 +921,22 @@ $isEditingTeacher = (bool) $editingTeacherData;
                     border: 1px solid #ccc;
                   " />
             </div>
-            <button type="button" id="btn-add-teacher" class="btn-add" style="<?php echo ($teacherSaveError || $isEditingTeacher) ? 'display:none;' : ''; ?>" onclick="var m = document.getElementById('teacher-modal-backdrop'); if (!m) return; m.style.display = 'flex'; this.style.display = 'none';">
+            <button type="button" id="btn-add-teacher" class="btn-add" style="<?php echo ($teacherSaveError || $isEditingTeacher) ? 'display:none;' : ''; ?>" onclick="openTeacherModal();">
               <i class="fa-solid fa-plus"></i> Add Teacher
             </button>
           </div>
         </div>
-        <div id="teacher-modal-backdrop" class="modal-backdrop" style="display:<?php echo ($teacherSaveError || $isEditingTeacher) ? 'flex' : 'none'; ?>;">
-          <div class="teacher-form-card">
-            <button type="button" class="teacher-form-close" onclick="document.getElementById('teacher-modal-backdrop').style.display='none'; document.getElementById('btn-add-teacher').style.display='inline-flex'; document.getElementById('teacher-form').reset(); document.getElementById('teacher-id-field').value='';">
+<div id="teacher-modal-backdrop" class="modal-backdrop" style="display:<?php echo ($teacherSaveError || $isEditingTeacher) ? 'flex' : 'none'; ?>;" onclick="if (event.target === this) { dismissTeacherModal(); }">
+           <div class="teacher-form-card" onclick="event.stopPropagation();">
+             <button type="button" class="teacher-form-close" onclick="dismissTeacherModal();">
               <i class="fa-solid fa-xmark"></i>
             </button>
             <?php if ($teacherSaveError): ?>
               <p style="color:#b91c1c; margin-bottom: 16px;"><?php echo htmlspecialchars($teacherSaveError); ?></p>
             <?php endif; ?>
             <div class="student-form-header">
-              <h3 id="form-title">Add Teacher</h3>
-              <p id="form-subtitle">Enter the teacher details below.</p>
+              <h3 id="form-title"><?php echo $isEditingTeacher ? 'Edit Teacher' : 'Add Teacher'; ?></h3>
+              <p id="form-subtitle"><?php echo $isEditingTeacher ? 'Update the teacher details below.' : 'Enter the teacher details below.'; ?></p>
             </div>
             <form method="post" id="teacher-form">
               <input type="hidden" name="teacher_id" id="teacher-id-field" value="<?php echo intval($editingTeacherData['id'] ?? 0); ?>">
@@ -966,8 +966,8 @@ $isEditingTeacher = (bool) $editingTeacherData;
                 </select>
               </div>
               <div class="form-buttons-row card-action-row">
-                <button type="submit" id="submit-btn" name="add_teacher" class="btn-submit">Save Teacher</button>
-                <button type="button" onclick="document.getElementById('teacher-modal-backdrop').style.display='none'; document.getElementById('btn-add-teacher').style.display='inline-flex'; document.getElementById('teacher-form').reset(); document.getElementById('teacher-id-field').value='';" class="btn-cancel">Cancel</button>
+                <button type="submit" id="submit-btn" name="<?php echo $isEditingTeacher ? 'update_teacher' : 'add_teacher'; ?>" class="btn-submit"><?php echo $isEditingTeacher ? 'Update Teacher' : 'Save Teacher'; ?></button>
+                <button type="button" onclick="dismissTeacherModal();" class="btn-cancel">Cancel</button>
               </div>
             </form>
           </div>
@@ -1038,8 +1038,10 @@ $res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name, 
     }
 
     function openTeacherModal() {
-      document.getElementById('teacher-modal').style.display = 'flex';
+      document.getElementById('teacher-modal-backdrop').style.display = 'flex';
       document.getElementById('btn-add-teacher').style.display = 'none';
+      document.getElementById('teacher-form').reset();
+      document.getElementById('teacher-id-field').value = '';
       document.getElementById('form-title').textContent = 'Add Teacher';
       document.getElementById('form-subtitle').textContent = 'Enter the teacher details below.';
       const submitBtn = document.querySelector('#teacher-form button[type="submit"]');
@@ -1047,7 +1049,7 @@ $res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name, 
       submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Teacher';
     }
     function closeTeacherModal() {
-      document.getElementById('teacher-modal').style.display = 'none';
+      document.getElementById('teacher-modal-backdrop').style.display = 'none';
       document.getElementById('btn-add-teacher').style.display = 'inline-flex';
       document.getElementById('teacher-form').reset();
       document.getElementById('teacher-id-field').value = '';
@@ -1056,6 +1058,22 @@ $res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name, 
       const submitBtn = document.querySelector('#teacher-form button[type="submit"]');
       submitBtn.name = 'add_teacher';
       submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Teacher';
+    }
+
+    // Cancel/close (X) button + backdrop click both call this.
+    // - In "Add" mode there's nothing loaded from the server, so just close
+    //   the modal in place — no need for a page reload.
+    // - In "Edit" mode the page was loaded with ?edit_teacher=ID, so we
+    //   redirect to strip that param and return to a clean list view.
+    function dismissTeacherModal() {
+      const teacherIdValue = document.getElementById('teacher-id-field').value;
+      if (teacherIdValue && teacherIdValue !== '0') {
+        var url = new URL(window.location);
+        url.searchParams.delete('edit_teacher');
+        window.location.href = url.toString();
+      } else {
+        closeTeacherModal();
+      }
     }
     function togglePassword(id) {
       const dots = document.getElementById('pwd-dots-' + id);
@@ -1083,7 +1101,13 @@ $res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name, 
       });
     });
 
-    if (document.getElementById('teacher-id-field').value) {
+    // FIX: the hidden teacher_id field is rendered as "0" when adding a new
+    // teacher, and the string "0" is truthy in JS, so the old check
+    // `if (teacherIdField.value)` always evaluated to true and forced the
+    // form into "Update" mode even for new teachers. We now explicitly
+    // exclude "0" / empty values.
+    const teacherIdValue = document.getElementById('teacher-id-field').value;
+    if (teacherIdValue && teacherIdValue !== '0') {
       document.getElementById('form-title').textContent = 'Edit Teacher';
       document.getElementById('form-subtitle').textContent = 'Update the teacher details below.';
       const submitBtn = document.querySelector('#teacher-form button[type="submit"]');
