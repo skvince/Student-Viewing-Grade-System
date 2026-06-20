@@ -37,19 +37,28 @@ function make_full_name(string $first, string $middle, string $last): string {
 
 function generate_password(string $lastName, ?int $id = null): string {
     $base = preg_replace('/[^a-zA-Z0-9]/', '', $lastName);
-    if ($id) {
-        return $id . $base;
+    // Trim base in case last name is empty after sanitization.
+    $base = $base === '' ? 'X' : $base;
+    if ($id !== null) {
+        return (string)$id . $base;
     }
-    return rand(1000, 9999) . $base;
+    return (string)rand(1000, 9999) . $base;
 }
 
 function authenticate_user(string $username, string $password): ?array {
     $conn = db_connect();
     if (!$conn) return null;
 
+    // 1) Teacher login by teacher_id (supports both `T-001` and `001` inputs)
+    $normalizedTeacherUsername = $username;
+    if (preg_match('/^T-?(\d{1,})$/i', $username, $m)) {
+        $num = (int)$m[1];
+        $normalizedTeacherUsername = 'T-' . str_pad((string)$num, 3, '0', STR_PAD_LEFT);
+    }
+
     $stmt = $conn->prepare("SELECT id, teacher_id, first_name, middle_name, last_name, password_hash, password FROM teachers WHERE teacher_id = ? LIMIT 1");
     if ($stmt) {
-        $stmt->bind_param('s', $username);
+        $stmt->bind_param('s', $normalizedTeacherUsername);
         $stmt->execute();
         $res = $stmt->get_result();
         if ($res && $row = $res->fetch_assoc()) {
@@ -65,9 +74,40 @@ function authenticate_user(string $username, string $password): ?array {
                 $conn->close();
                 return array_merge($row, ['role' => 'teacher']);
             }
+
+            // If teacher exists but has no usable password fields, fall through to return null.
         }
         $stmt->close();
     }
+
+    // 2) Backward compatibility for teachers created before credentials existed.
+    // If teacher_id/password_hash are missing, allow login by database `id`.
+    if (ctype_digit($username)) {
+        $tid = (int)$username;
+        $stmt = $conn->prepare("SELECT id, teacher_id, first_name, middle_name, last_name, password_hash, password FROM teachers WHERE id = ? LIMIT 1");
+        if ($stmt) {
+            $stmt->bind_param('i', $tid);
+            $stmt->execute();
+            $res = $stmt->get_result();
+            if ($res && $row = $res->fetch_assoc()) {
+                $hash = $row['password_hash'] ?? '';
+                $legacy = $row['password'] ?? '';
+                if ($hash && password_verify($password, $hash)) {
+                    $stmt->close();
+                    $conn->close();
+                    return array_merge($row, ['role' => 'teacher']);
+                }
+                if ($legacy && $legacy === $password) {
+                    $stmt->close();
+                    $conn->close();
+                    return array_merge($row, ['role' => 'teacher']);
+                }
+            }
+            $stmt->close();
+        }
+    }
+
+
 
     $stmt = $conn->prepare("SELECT id, student_id, first_name, middle_name, last_name, password_hash, password FROM students WHERE student_id = ? LIMIT 1");
     if ($stmt) {
@@ -797,6 +837,7 @@ function create_teacher(string $firstName, ?string $middleName, string $lastName
     $conn = db_connect();
     if (!$conn) return ['success' => false, 'error' => 'Database connection failed.'];
 
+    // First insert the identity record.
     $stmt = $conn->prepare("INSERT INTO teachers (first_name, middle_name, last_name, department) VALUES (?, ?, ?, ?)");
     if (!$stmt) { $conn->close(); return ['success' => false, 'error' => $conn->error]; }
 
@@ -804,14 +845,45 @@ function create_teacher(string $firstName, ?string $middleName, string $lastName
     $ok = $stmt->execute();
     $id = $conn->insert_id;
     $stmt->close();
-    $conn->close();
 
-    if ($ok) {
-        return ['success' => true, 'id' => $id];
+    if (! $ok || ! $id) {
+        $conn->close();
+        return ['success' => false, 'error' => 'Failed to create teacher.'];
     }
 
-    return ['success' => false, 'error' => 'Failed to create teacher.'];
+    // Standardized username format for teacher login: T-000, T-001, ...
+    $padded = str_pad((string)$id, 3, '0', STR_PAD_LEFT);
+    $teacherId = 'T-' . $padded;
+
+    // Temporary password: keep deterministic and simple (lastName + id base).
+    // Admin should share this as-is.
+    $tempPassword = generate_password($lastName, (int)$id);
+
+    $hash = password_hash($tempPassword, PASSWORD_DEFAULT);
+
+    $upd = $conn->prepare("UPDATE teachers SET teacher_id = ?, password_hash = ? WHERE id = ?");
+    if (! $upd) {
+        $conn->close();
+        return ['success' => false, 'error' => $conn->error];
+    }
+    $upd->bind_param('ssi', $teacherId, $hash, $id);
+    $updOk = $upd->execute();
+    $upd->close();
+
+    $conn->close();
+
+    if ($updOk) {
+        return [
+            'success' => true,
+            'id' => (int)$id,
+            'teacher_id' => $teacherId,
+            'temp_password' => $tempPassword,
+        ];
+    }
+
+    return ['success' => false, 'error' => 'Failed to finalize teacher login credentials.'];
 }
+
 
 function update_teacher(int $teacherId, string $firstName, ?string $middleName, string $lastName, ?string $department, ?string $email): bool {
     $conn = db_connect();
@@ -842,3 +914,54 @@ function delete_teacher(int $teacherId): bool {
 
     return (bool)$ok;
 }
+
+function create_student(string $firstName, ?string $middleName, string $lastName, ?int $sectionId, ?string $department): array {
+    $conn = db_connect();
+    if (!$conn) return ['success' => false, 'error' => 'Database connection failed.'];
+
+    $stmt = $conn->prepare("INSERT INTO students (first_name, middle_name, last_name, section_id, department) VALUES (?, ?, ?, ?, ?)");
+    if (!$stmt) { $conn->close(); return ['success' => false, 'error' => $conn->error]; }
+
+    $stmt->bind_param('sssis', $firstName, $middleName, $lastName, $sectionId, $department);
+    $ok = $stmt->execute();
+    $id = $conn->insert_id;
+    $stmt->close();
+    $conn->close();
+
+    if ($ok) {
+        return ['success' => true, 'id' => $id];
+    }
+
+    return ['success' => false, 'error' => 'Failed to create student.'];
+}
+
+function update_student(int $studentId, string $firstName, ?string $middleName, string $lastName, ?int $sectionId, ?string $department, ?string $email): bool {
+    $conn = db_connect();
+    if (!$conn) return false;
+
+    $stmt = $conn->prepare("UPDATE students SET first_name = ?, middle_name = ?, last_name = ?, section_id = ?, department = ? WHERE id = ?");
+    if (!$stmt) { $conn->close(); return false; }
+
+    $stmt->bind_param('sssisi', $firstName, $middleName, $lastName, $sectionId, $department, $studentId);
+    $ok = $stmt->execute();
+    $stmt->close();
+    $conn->close();
+
+    return (bool)$ok;
+}
+
+function delete_student(int $studentId): bool {
+    $conn = db_connect();
+    if (!$conn) return false;
+
+    $stmt = $conn->prepare("DELETE FROM students WHERE id = ?");
+    if (!$stmt) { $conn->close(); return false; }
+
+    $stmt->bind_param('i', $studentId);
+    $ok = $stmt->execute();
+    $stmt->close();
+    $conn->close();
+
+    return (bool)$ok;
+}
+

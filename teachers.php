@@ -18,6 +18,10 @@ $editingTeacherData = [];
 $isEditingTeacher = false;
 $departments = [];
 
+// Credentials hint for the last created teacher.
+$lastTeacherCreated = $_SESSION['last_teacher_created'] ?? null;
+unset($_SESSION['last_teacher_created']);
+
 $conn = db_connect();
 if ($conn) {
     $res = $conn->query("SELECT id, name FROM departments ORDER BY name ASC");
@@ -70,6 +74,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_teacher'])) {
     } else {
         $result = create_teacher($firstName, $middleName, $lastName, $department ?: null);
         if ($result['success']) {
+            // Store the generated credentials so the admin can see them after redirect.
+            $_SESSION['last_teacher_created'] = [
+                'teacher_id' => $result['teacher_id'] ?? '',
+                'temp_password' => $result['temp_password'] ?? '',
+                'teacher_name' => $firstName . ' ' . ($middleName ? ($middleName . ' ') : '') . $lastName,
+            ];
+
             audit_log('create_teacher');
             header('Location: ' . $_SERVER['PHP_SELF']);
             exit;
@@ -894,7 +905,9 @@ $isEditingTeacher = (bool) $editingTeacherData;
       <h1 class="view-title">Teachers Management</h1>
       <p class="view-subtitle">Manage Teachers Account</p>
 
-      <div class="panel-block">
+
+
+    <div class="panel-block">
         <div class="block-header" style="
               display: flex;
               justify-content: space-between;
