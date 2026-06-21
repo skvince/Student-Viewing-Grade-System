@@ -81,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <section class="login-section">
         <article class="login-box">
           <header class="title">
-            <div class="icon"><img src="https://cscqcph.com/images/bg/cscqcph.png" alt="CSCQC Logo"></div>
+            <div class="icon"><img src="https://cscqcph.com/images/bg/cscqcph.png" alt="CSCQC"></div>
             <h1>Sign In</h1>
           </header>
           <form method="post">

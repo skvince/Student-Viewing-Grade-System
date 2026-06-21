@@ -156,7 +156,7 @@ if ($conn) {
   <aside class="sidebar">
     <div>
       <div class="brand" style="display:flex;align-items:center;padding:0 24px;margin-bottom:30px;">
-        <i class="fa-solid fa-graduation-cap" style="font-size:1.8rem;color:var(--primary-green);margin-right:12px;"></i>
+        <img src="https://cscqcph.com/images/bg/cscqcph.png" alt="CSCQC" style="width:32px;height:32px;object-fit:contain;font-size:1.8rem;color:var(--primary-green);margin-right:12px;">
         <div class="brand-text"><h2 style="font-size:1rem;font-weight:700;color:#111827;">Admin Panel</h2><p style="font-size:0.75rem;color:var(--text-muted);">CSCQC</p></div>
       </div>
       <nav class="nav-menu">
@@ -285,3 +285,4 @@ if ($conn) {
   </script>
 </body>
 </html>
+

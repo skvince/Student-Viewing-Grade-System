@@ -479,7 +479,7 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
 
   <header class="mobile-header">
     <div class="brand" style="padding:0;margin:0;">
-      <i class="fa-solid fa-graduation-cap" style="font-size:1.5rem;color:var(--primary-green);margin-right:10px;"></i>
+      <img src="https://cscqcph.com/images/bg/cscqcph.png" alt="CSCQC" style="width:32px;height:32px;object-fit:contain;font-size:1.5rem;color:var(--primary-green);margin-right:10px;">
       <div class="brand-text"><h2 style="font-size:.9rem;">Admin Panel</h2></div>
     </div>
     <label for="sidebar-toggle" class="menu-toggle-btn">
@@ -490,7 +490,7 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
   <aside class="sidebar">
     <div>
       <div class="brand">
-        <i class="fa-solid fa-graduation-cap"></i>
+        <img src="https://cscqcph.com/images/bg/cscqcph.png" alt="CSCQC" style="width:32px;height:32px;object-fit:contain;margin-right:12px;">
         <div class="brand-text"><h2>Admin Panel</h2><p>CSCQC</p></div>
       </div>
       <nav class="nav-menu" aria-label="Main Navigation">
@@ -772,19 +772,25 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
                   <td><?= htmlspecialchars($a['section_name'] ?? '—') ?></td>
                   <td><?= htmlspecialchars($a['school_year'] ?? '') ?></td>
                   <td><?= htmlspecialchars($a['semester'] ?? '') ?></td>
-                  <td class="actions-cell">
-                    <button type="button" class="icon-button btn-edit-assignment"
-                            data-id="<?= intval($a['assignment_id']) ?>"
-                            data-teacher="<?= intval($a['teacher_id'] ?? 0) ?>"
-                            data-subject="<?= intval($a['subject_id'] ?? 0) ?>"
-                            data-section="<?= intval($a['section_id'] ?? 0) ?>"
-                            data-year="<?= htmlspecialchars($a['school_year'] ?? '', ENT_QUOTES) ?>"
-                            data-semester="<?= htmlspecialchars($a['semester'] ?? '', ENT_QUOTES) ?>"
-                            title="Edit assignment">
-                      <i class="fa-solid fa-pen-to-square" style="color:#059669;"></i>
-                    </button>
-                      <form method="post" class="delete-form" data-confirm="Delete this assignment?">
-                  </td>
+                   <td class="actions-cell">
+                     <button type="button" class="icon-button btn-edit-assignment"
+                             data-id="<?= intval($a['assignment_id']) ?>"
+                             data-teacher="<?= intval($a['teacher_id'] ?? 0) ?>"
+                             data-subject="<?= intval($a['subject_id'] ?? 0) ?>"
+                             data-section="<?= intval($a['section_id'] ?? 0) ?>"
+                             data-year="<?= htmlspecialchars($a['school_year'] ?? '', ENT_QUOTES) ?>"
+                             data-semester="<?= htmlspecialchars($a['semester'] ?? '', ENT_QUOTES) ?>"
+                             title="Edit assignment">
+                       <i class="fa-solid fa-pen-to-square" style="color:#059669;"></i>
+                     </button>
+                     <form method="post" class="delete-form" data-confirm="Delete this assignment?">
+                       <input type="hidden" name="delete_assignment" value="1">
+                       <input type="hidden" name="assignment_id" value="<?= intval($a['assignment_id']) ?>">
+                       <button type="submit" class="icon-button" title="Delete assignment">
+                         <i class="fa-solid fa-trash-can"></i>
+                       </button>
+                     </form>
+                   </td>
                 </tr>
                 <?php endforeach; ?>
               <?php else: ?>

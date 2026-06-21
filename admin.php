@@ -698,12 +698,12 @@ if ($conn) {
 <body>
   <input type="checkbox" id="sidebar-toggle" />
   <header class="mobile-header">
-    <div class="brand" style="padding:0;margin:0;"><i class="fa-solid fa-graduation-cap" style="font-size:1.5rem;color:var(--primary-green);margin-right:10px;"></i><div class="brand-text"><h2 style="font-size:.9rem;">Admin Panel</h2></div></div>
+    <div class="brand" style="padding:0;margin:0;"><img src="https://cscqcph.com/images/bg/cscqcph.png" alt="CSCQC" style="width:32px;height:32px;object-fit:contain;font-size:1.5rem;color:var(--primary-green);margin-right:10px;"><div class="brand-text"><h2 style="font-size:.9rem;">Admin Panel</h2></div></div>
     <label for="sidebar-toggle" class="menu-toggle-btn"><i class="fa-solid fa-bars"></i></label>
   </header>
   <aside class="sidebar">
     <div>
-      <div class="brand"><i class="fa-solid fa-graduation-cap"></i><div class="brand-text"><h2>Admin Panel</h2><p>CSCQC</p></div></div>
+      <div class="brand"><img src="https://cscqcph.com/images/bg/cscqcph.png" alt="CSCQC" style="width:32px;height:32px;object-fit:contain;margin-right:12px;"><div class="brand-text"><h2>Admin Panel</h2><p>CSCQC</p></div></div>
       <nav class="nav-menu" aria-label="Main Navigation">
         <a href="admin.php" class="active"><i class="fa-solid fa-table-cells-large"></i> Dashboard</a>
         <a href="teachers.php"><i class="fa-solid fa-users"></i> Teachers</a>

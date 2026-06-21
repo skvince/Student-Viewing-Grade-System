@@ -135,6 +135,12 @@ function authenticate_user(string $username, string $password): ?array {
                 $conn->close();
                 return array_merge($row, ['role' => 'student']);
             }
+            $fallback = generate_password($row['last_name'], (int)$row['id']);
+            if ($fallback === $password) {
+                $stmt->close();
+                $conn->close();
+                return array_merge($row, ['role' => 'student']);
+            }
         }
         $stmt->close();
     }
@@ -962,14 +968,27 @@ function create_student(string $firstName, ?string $middleName, string $lastName
             $upd->execute();
             $upd->close();
         }
+
+        $tempPassword = generate_password($lastName, (int)$id);
+        $hash = password_hash($tempPassword, PASSWORD_DEFAULT);
+        $pwdUpd = $conn->prepare("UPDATE students SET password_hash = ? WHERE id = ?");
+        if ($pwdUpd) {
+            $pwdUpd->bind_param('si', $hash, $id);
+            $pwdUpd->execute();
+            $pwdUpd->close();
+        }
+
+        $conn->close();
+
+        return [
+            'success' => true,
+            'id' => (int)$id,
+            'student_id' => $generatedId,
+            'temp_password' => $tempPassword,
+        ];
     }
 
     $conn->close();
-
-    if ($ok) {
-        return ['success' => true, 'id' => $id];
-    }
-
     return ['success' => false, 'error' => 'Failed to create student.'];
 }
 
@@ -983,6 +1002,38 @@ function update_student(int $studentId, string $firstName, ?string $middleName, 
     $stmt->bind_param('sssisi', $firstName, $middleName, $lastName, $sectionId, $department, $studentId);
     $ok = $stmt->execute();
     $stmt->close();
+    $conn->close();
+
+    return (bool)$ok;
+}
+
+function delete_subject(int $subjectId): bool {
+    $conn = db_connect();
+    if (!$conn) return false;
+
+    $st = $conn->prepare("SELECT COUNT(*) as cnt FROM assignments WHERE subject_id = ? UNION SELECT COUNT(*) as cnt FROM grades WHERE subject_id = ?");
+    if (!$st) { $conn->close(); return false; }
+
+    $st->bind_param('ii', $subjectId, $subjectId);
+    $st->execute();
+    $res = $st->get_result();
+    $count = 0;
+    while ($r = $res->fetch_assoc()) {
+        $count += (int)($r['cnt'] ?? 0);
+    }
+    $st->close();
+
+    if ($count > 0) {
+        $conn->close();
+        return false;
+    }
+
+    $st = $conn->prepare("DELETE FROM subjects WHERE id = ? LIMIT 1");
+    if (!$st) { $conn->close(); return false; }
+
+    $st->bind_param('i', $subjectId);
+    $ok = $st->execute();
+    $st->close();
     $conn->close();
 
     return (bool)$ok;

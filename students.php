@@ -82,10 +82,15 @@ $studentSaveError = '';
         $studentSaveError = 'First name and last name are required.';
       } else {
         $result = create_student($firstName, $middleName, $lastName, $submittedSectionId ?: null, $submittedDepartment ?: null);
-        if ($result['success']) {
-            audit_log('create_student');
-            header('Location: ' . $_SERVER['PHP_SELF']);
-            exit;
+      if ($result['success']) {
+          audit_log('create_student');
+          $_SESSION['last_student_created'] = [
+              'student_id' => $result['student_id'] ?? '',
+              'temp_password' => $result['temp_password'] ?? '',
+              'student_name' => $firstName . ' ' . ($middleName ? ($middleName . ' ') : '') . $lastName,
+          ];
+          header('Location: ' . $_SERVER['PHP_SELF']);
+          exit;
         } else {
           $studentSaveError = $result['error'];
         }
@@ -122,6 +127,8 @@ $studentSaveError = '';
     $formDepartment = $editingStudentData['department'] ?? $submittedDepartment ?? '';
     $formSectionId = intval($editingStudentData['section_id'] ?? $submittedSectionId ?? 0);
     $isEditingStudent = (bool) $editingStudentData;
+    $lastStudentCreated = $_SESSION['last_student_created'] ?? null;
+    unset($_SESSION['last_student_created']);
 
     ?>
     <!doctype html>
@@ -893,7 +900,7 @@ $studentSaveError = '';
       <input type="checkbox" id="sidebar-toggle" />
     <header class="mobile-header">
         <div class="brand" style="padding: 0; margin: 0">
-          <i class="fa-solid fa-graduation-cap" style="font-size: 1.5rem"></i>
+          <img src="https://cscqcph.com/images/bg/cscqcph.png" alt="CSCQC" style="width:32px;height:32px;object-fit:contain;font-size: 1.5rem">
           <div class="brand-text">
             <h2 style="font-size: 0.9rem">Admin Panel</h2>
           </div>
@@ -911,7 +918,7 @@ $studentSaveError = '';
       <aside class="sidebar">
         <div>
           <div class="brand">
-            <i class="fa-solid fa-graduation-cap"></i>
+            <img src="https://cscqcph.com/images/bg/cscqcph.png" alt="CSCQC" style="width:32px;height:32px;object-fit:contain;margin-right:12px;">
             <div class="brand-text">
               <h2>Admin Panel</h2>
               <p>CSCQC</p>
@@ -959,6 +966,16 @@ $studentSaveError = '';
         <div class="tab-content" style="display: block;">
           <h1 class="view-title">Students Management</h1>
           <p class="view-subtitle">Manage registered institution students</p>
+
+          <?php if ($lastStudentCreated): ?>
+          <div style="background:#dcfce7;color:#166534;padding:12px 16px;border-radius:8px;border:1px solid #bbf7d0;margin-bottom:16px;font-size:0.9rem;">
+            <strong>Student created:</strong> <?php echo htmlspecialchars($lastStudentCreated['student_name'] ?? ''); ?>
+            &nbsp;|&nbsp;
+            <strong>User ID:</strong> <?php echo htmlspecialchars($lastStudentCreated['student_id'] ?? ''); ?>
+            &nbsp;|&nbsp;
+            <strong>Password:</strong> <?php echo htmlspecialchars($lastStudentCreated['temp_password'] ?? ''); ?>
+          </div>
+          <?php endif; ?>
 
           <div class="panel-block">
             <div class="block-header" style="
@@ -1091,7 +1108,7 @@ $studentSaveError = '';
                     if ($res->num_rows) {
                         while ($row = $res->fetch_assoc()) {
                             $fullName = htmlspecialchars($row['first_name'] . ' ' . ($row['middle_name'] ? $row['middle_name'] . ' ' : '') . $row['last_name']);
-                            $passwordHint = htmlspecialchars(strtoupper(substr($row['first_name'], 0, 1)) . str_replace(' ', '_', $row['last_name']));
+                            $passwordHint = htmlspecialchars(generate_password($row['last_name'], (int)$row['id']));
                             echo '<tr>';
                              echo '<td>' . htmlspecialchars(!empty($row['student_id']) ? $row['student_id'] : ('S-' . sprintf('%03d', $row['id']))) . '</td>';
                             echo '<td>' . $fullName . '</td>';

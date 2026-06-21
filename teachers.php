@@ -835,7 +835,7 @@ $isEditingTeacher = (bool) $editingTeacherData;
   <input type="checkbox" id="sidebar-toggle" />
 <header class="mobile-header">
     <div class="brand" style="padding: 0; margin: 0">
-      <i class="fa-solid fa-graduation-cap" style="font-size: 1.5rem"></i>
+      <img src="https://cscqcph.com/images/bg/cscqcph.png" alt="CSCQC" style="width:32px;height:32px;object-fit:contain;font-size: 1.5rem">
       <div class="brand-text">
         <h2 style="font-size: 0.9rem">Admin Panel</h2>
       </div>
@@ -848,7 +848,7 @@ $isEditingTeacher = (bool) $editingTeacherData;
   <aside class="sidebar">
     <div>
       <div class="brand">
-        <i class="fa-solid fa-graduation-cap"></i>
+        <img src="https://cscqcph.com/images/bg/cscqcph.png" alt="CSCQC" style="width:32px;height:32px;object-fit:contain;margin-right:12px;">
         <div class="brand-text">
           <h2>Admin Panel</h2>
           <p>CSCQC</p>

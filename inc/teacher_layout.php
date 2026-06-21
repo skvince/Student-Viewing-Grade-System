@@ -144,7 +144,7 @@ $_SESSION['teacher_sem'] = $semester;
     <div class="sidebar-overlay" id="sidebar-overlay"></div>
     <aside class="sidebar" id="sidebar">
         <div>
-            <div class="brand"><i class="fa-solid fa-graduation-cap"></i><div class="brand-text"><h2>Teacher Panel</h2><p>CSCQC</p></div></div>
+            <div class="brand"><img src="https://cscqcph.com/images/bg/cscqcph.png" alt="CSCQC" style="width:32px;height:32px;object-fit:contain;margin-right:12px;"><div class="brand-text"><h2>Teacher Panel</h2><p>CSCQC</p></div></div>
             <nav class="nav-menu" aria-label="Main Navigation">
                 <a href="teacher_module.php"><i class="fa-solid fa-list-ul"></i> My Classes</a>
                 <a href="teacher_requests.php"><i class="fa-solid fa-paper-plane"></i> My Requests</a>
@@ -178,3 +178,4 @@ $_SESSION['teacher_sem'] = $semester;
                 </div>
             </div>
         <?php endif; ?>
+
