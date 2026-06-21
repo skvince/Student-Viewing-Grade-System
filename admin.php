@@ -727,7 +727,7 @@ if ($conn) {
             <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
             Academic Year:
           </label>
-          <select id="global-filter-year" class="global-select" onchange="syncGlobalFilter()">
+          <select id="global-filter-year" class="global-select">
             <option value="2025-2026" <?php echo $selectedYear==='2025-2026'?'selected':''; ?>>2025–2026</option>
             <option value="2026-2027" <?php echo $selectedYear==='2026-2027'?'selected':''; ?>>2026–2027</option>
           </select>
@@ -737,7 +737,7 @@ if ($conn) {
           <label for="global-filter-sem">
             <i class="fa-solid fa-clock" aria-hidden="true"></i> Semester:
           </label>
-          <select id="global-filter-sem" class="global-select" onchange="syncGlobalFilter()">
+          <select id="global-filter-sem" class="global-select">
             <option value="1st Semester" <?php echo $selectedSem==='1st Semester'?'selected':''; ?>>1st Semester</option>
             <option value="2nd Semester" <?php echo $selectedSem==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
             <option value="Summer" <?php echo $selectedSem==='Summer'?'selected':''; ?>>Summer</option>
@@ -824,20 +824,26 @@ if (count($recentAssignments)) {
     </div>
   </div>
   <script>
-  function syncGlobalFilter() {
-    const year = document.getElementById('global-filter-year').value;
-    const sem  = document.getElementById('global-filter-sem').value;
-    const url  = new URL(window.location);
-    url.searchParams.set('global_year', year);
-    url.searchParams.set('global_sem', sem);
-    url.searchParams.delete('school_year');
-    url.searchParams.delete('semester');
-    url.searchParams.delete('academic_year');
-    window.location.href = url.toString();
-  }
+   const yearSelect = document.getElementById('global-filter-year');
+   const semSelect = document.getElementById('global-filter-sem');
 
-  document.addEventListener('DOMContentLoaded', function () {
-    const searchInput = document.querySelector('.table-search-input');
+   function syncGlobalFilter() {
+     const year = document.getElementById('global-filter-year').value;
+     const sem  = document.getElementById('global-filter-sem').value;
+     const url  = new URL(window.location);
+     url.searchParams.set('global_year', year);
+     url.searchParams.set('global_sem', sem);
+     url.searchParams.delete('school_year');
+     url.searchParams.delete('semester');
+     url.searchParams.delete('academic_year');
+     window.location.href = url.toString();
+   }
+
+   document.addEventListener('DOMContentLoaded', function () {
+     if (yearSelect) yearSelect.addEventListener('change', syncGlobalFilter);
+     if (semSelect) semSelect.addEventListener('change', syncGlobalFilter);
+
+     const searchInput = document.querySelector('.table-search-input');
     const tableBody   = document.getElementById('dashboard-recent-table-body');
 
     // Cache PHP-rendered rows; detect whether real data rows exist

@@ -878,7 +878,7 @@ $isEditingTeacher = (bool) $editingTeacherData;
             <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
             Academic Year:
           </label>
-          <select id="global-filter-year" class="global-select" onchange="syncGlobalFilter()">
+          <select id="global-filter-year" class="global-select">
             <option value="2025-2026" <?php echo $selectedYear==='2025-2026'?'selected':''; ?>>2025–2026</option>
             <option value="2026-2027" <?php echo $selectedYear==='2026-2027'?'selected':''; ?>>2026–2027</option>
           </select>
@@ -888,7 +888,7 @@ $isEditingTeacher = (bool) $editingTeacherData;
           <label for="global-filter-sem">
             <i class="fa-solid fa-clock" aria-hidden="true"></i> Semester:
           </label>
-          <select id="global-filter-sem" class="global-select" onchange="syncGlobalFilter()">
+          <select id="global-filter-sem" class="global-select">
             <option value="1st Semester" <?php echo $selectedSem==='1st Semester'?'selected':''; ?>>1st Semester</option>
             <option value="2nd Semester" <?php echo $selectedSem==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
             <option value="Summer" <?php echo $selectedSem==='Summer'?'selected':''; ?>>Summer</option>
@@ -930,14 +930,14 @@ $isEditingTeacher = (bool) $editingTeacherData;
                     border: 1px solid #ccc;
                   " />
             </div>
-            <button type="button" id="btn-add-teacher" class="btn-add" style="<?php echo ($teacherSaveError || $isEditingTeacher) ? 'display:none;' : ''; ?>" onclick="openTeacherModal();">
+            <button type="button" id="btn-add-teacher" class="btn-add" style="<?php echo ($teacherSaveError || $isEditingTeacher) ? 'display:none;' : ''; ?>">
               <i class="fa-solid fa-plus"></i> Add Teacher
             </button>
           </div>
         </div>
-<div id="teacher-modal-backdrop" class="modal-backdrop" style="display:<?php echo ($teacherSaveError || $isEditingTeacher) ? 'flex' : 'none'; ?>;" onclick="if (event.target === this) { dismissTeacherModal(); }">
-           <div class="teacher-form-card" onclick="event.stopPropagation();">
-             <button type="button" class="teacher-form-close" onclick="dismissTeacherModal();">
+<div id="teacher-modal-backdrop" class="modal-backdrop" style="display:<?php echo ($teacherSaveError || $isEditingTeacher) ? 'flex' : 'none'; ?>;">
+            <div class="teacher-form-card">
+              <button type="button" class="teacher-form-close" id="btn-close-teacher-modal">
               <i class="fa-solid fa-xmark"></i>
             </button>
             <?php if ($teacherSaveError): ?>
@@ -976,7 +976,7 @@ $isEditingTeacher = (bool) $editingTeacherData;
               </div>
               <div class="form-buttons-row card-action-row">
                 <button type="submit" id="submit-btn" name="<?php echo $isEditingTeacher ? 'update_teacher' : 'add_teacher'; ?>" class="btn-submit"><?php echo $isEditingTeacher ? 'Update Teacher' : 'Save Teacher'; ?></button>
-                <button type="button" onclick="dismissTeacherModal();" class="btn-cancel">Cancel</button>
+                 <button type="button" id="btn-cancel-teacher" class="btn-cancel">Cancel</button>
               </div>
             </form>
           </div>
@@ -1010,10 +1010,10 @@ $res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name, 
                             echo '<td>' . htmlspecialchars($row['teacher_id'] ?? ('T-' . sprintf('%03d', $row['id']))) . '</td>';
                             echo '<td>' . $fullName . '</td>';
                             echo '<td>' . htmlspecialchars($row['department'] ?? '') . '</td>';
-                            echo '<td><div class="password-cell"><span class="password-dots" id="pwd-dots-' . intval($row['id']) . '">••••••••</span><span class="password-text" id="pwd-text-' . intval($row['id']) . '" style="display:none;">' . $passwordHint . '</span><button type="button" class="icon-button" onclick="togglePassword(' . intval($row['id']) . ')" title="Show/Hide password"><i class="fa-solid fa-eye" id="pwd-eye-' . intval($row['id']) . '"></i></button></div></td>';
+                            echo '<td><div class="password-cell"><span class="password-dots" id="pwd-dots-' . intval($row['id']) . '">••••••••</span><span class="password-text" id="pwd-text-' . intval($row['id']) . '" style="display:none;">' . $passwordHint . '</span><button type="button" class="icon-button toggle-password-btn" data-user-id="' . intval($row['id']) . '" title="Show/Hide password"><i class="fa-solid fa-eye" id="pwd-eye-' . intval($row['id']) . '"></i></button></div></td>';
                             echo '<td class="actions-cell">';
                             echo '<a href="?edit_teacher=' . intval($row['id']) . '" class="icon-button" title="Edit teacher" style="text-decoration:none;"><i class="fa-solid fa-pen-to-square" style="color:#10b981;"></i></a>';
-                            echo '<form method="post" style="display:inline;" onsubmit="return confirm(\'Delete this teacher?\');"><input type="hidden" name="delete_teacher" value="1"><input type="hidden" name="teacher_id" value="' . intval($row['id']) . '"><button type="submit" class="icon-button" title="Delete teacher"><i class="fa-solid fa-trash-can"></i></button></form>';
+                            echo '<form method="post" class="delete-form" data-confirm="Delete this teacher?"><input type="hidden" name="delete_teacher" value="1"><input type="hidden" name="teacher_id" value="' . intval($row['id']) . '"><button type="submit" class="icon-button" title="Delete teacher"><i class="fa-solid fa-trash-can"></i></button></form>';
                             echo '</td>';
                             echo '</tr>';
                         }
@@ -1034,6 +1034,14 @@ $res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name, 
     </div>
   </div>
   <script>
+    const btnAddTeacher = document.getElementById('btn-add-teacher');
+    const teacherModalBackdrop = document.getElementById('teacher-modal-backdrop');
+    const btnCloseTeacherModal = document.getElementById('btn-close-teacher-modal');
+    const btnCancelTeacher = document.getElementById('btn-cancel-teacher');
+    const yearSelect = document.getElementById('global-filter-year');
+    const semSelect = document.getElementById('global-filter-sem');
+    const teacherIdField = document.getElementById('teacher-id-field');
+
     function syncGlobalFilter() {
       const year = document.getElementById('global-filter-year').value;
       const sem  = document.getElementById('global-filter-sem').value;
@@ -1057,6 +1065,7 @@ $res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name, 
       submitBtn.name = 'add_teacher';
       submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Teacher';
     }
+
     function closeTeacherModal() {
       document.getElementById('teacher-modal-backdrop').style.display = 'none';
       document.getElementById('btn-add-teacher').style.display = 'inline-flex';
@@ -1069,11 +1078,6 @@ $res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name, 
       submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Teacher';
     }
 
-    // Cancel/close (X) button + backdrop click both call this.
-    // - In "Add" mode there's nothing loaded from the server, so just close
-    //   the modal in place — no need for a page reload.
-    // - In "Edit" mode the page was loaded with ?edit_teacher=ID, so we
-    //   redirect to strip that param and return to a clean list view.
     function dismissTeacherModal() {
       const teacherIdValue = document.getElementById('teacher-id-field').value;
       if (teacherIdValue && teacherIdValue !== '0') {
@@ -1084,6 +1088,7 @@ $res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name, 
         closeTeacherModal();
       }
     }
+
     function togglePassword(id) {
       const dots = document.getElementById('pwd-dots-' + id);
       const text = document.getElementById('pwd-text-' + id);
@@ -1098,31 +1103,65 @@ $res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name, 
         eye.className = 'fa-solid fa-eye-slash';
       }
     }
+
     function filterTeachers(query) {
       query = query.toLowerCase();
       document.querySelectorAll('#teachers-table tbody tr').forEach(row => {
         row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
       });
     }
-    document.querySelectorAll('.table-search-input').forEach(input => {
-      input.addEventListener('input', function() {
-        filterTeachers(this.value);
-      });
-    });
 
-    // FIX: the hidden teacher_id field is rendered as "0" when adding a new
-    // teacher, and the string "0" is truthy in JS, so the old check
-    // `if (teacherIdField.value)` always evaluated to true and forced the
-    // form into "Update" mode even for new teachers. We now explicitly
-    // exclude "0" / empty values.
-    const teacherIdValue = document.getElementById('teacher-id-field').value;
-    if (teacherIdValue && teacherIdValue !== '0') {
-      document.getElementById('form-title').textContent = 'Edit Teacher';
-      document.getElementById('form-subtitle').textContent = 'Update the teacher details below.';
-      const submitBtn = document.querySelector('#teacher-form button[type="submit"]');
-      submitBtn.name = 'update_teacher';
-      submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Update Teacher';
-    }
+    document.addEventListener('DOMContentLoaded', function() {
+      if (btnAddTeacher) {
+        btnAddTeacher.addEventListener('click', openTeacherModal);
+      }
+      if (btnCloseTeacherModal) {
+        btnCloseTeacherModal.addEventListener('click', dismissTeacherModal);
+      }
+      if (btnCancelTeacher) {
+        btnCancelTeacher.addEventListener('click', dismissTeacherModal);
+      }
+      if (teacherModalBackdrop) {
+        teacherModalBackdrop.addEventListener('click', function(e) {
+          if (e.target === teacherModalBackdrop) dismissTeacherModal();
+        });
+      }
+      if (yearSelect) {
+        yearSelect.addEventListener('change', syncGlobalFilter);
+      }
+      if (semSelect) {
+        semSelect.addEventListener('change', syncGlobalFilter);
+      }
+
+      document.querySelectorAll('.table-search-input').forEach(input => {
+        input.addEventListener('input', function() {
+          filterTeachers(this.value);
+        });
+      });
+
+      document.querySelectorAll('.toggle-password-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const userId = this.getAttribute('data-user-id');
+          if (userId) togglePassword(userId);
+        });
+      });
+
+      document.querySelectorAll('.delete-form').forEach(form => {
+        form.addEventListener('submit', function(e) {
+          const msg = this.getAttribute('data-confirm') || 'Are you sure?';
+          if (!confirm(msg)) e.preventDefault();
+        });
+      });
+
+      const teacherIdValue = teacherIdField ? teacherIdField.value : '';
+      if (teacherIdValue && teacherIdValue !== '0') {
+        document.getElementById('form-title').textContent = 'Edit Teacher';
+        document.getElementById('form-subtitle').textContent = 'Update the teacher details below.';
+        const submitBtn = document.querySelector('#teacher-form button[type="submit"]');
+        submitBtn.name = 'update_teacher';
+        submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Update Teacher';
+      }
+    });
   </script>
 </body>
 </html>

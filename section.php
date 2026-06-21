@@ -922,7 +922,7 @@ if ($conn) {
             <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
             Academic Year:
           </label>
-          <select id="global-filter-year" class="global-select" onchange="syncGlobalFilter()">
+          <select id="global-filter-year" class="global-select">
             <option value="2025-2026" <?php echo $selectedYear==='2025-2026'?'selected':''; ?>>2025–2026</option>
             <option value="2026-2027" <?php echo $selectedYear==='2026-2027'?'selected':''; ?>>2026–2027</option>
           </select>
@@ -932,7 +932,7 @@ if ($conn) {
           <label for="global-filter-sem">
             <i class="fa-solid fa-clock" aria-hidden="true"></i> Semester:
           </label>
-          <select id="global-filter-sem" class="global-select" onchange="syncGlobalFilter()">
+          <select id="global-filter-sem" class="global-select">
             <option value="1st Semester" <?php echo $selectedSem==='1st Semester'?'selected':''; ?>>1st Semester</option>
             <option value="2nd Semester" <?php echo $selectedSem==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
             <option value="Summer" <?php echo $selectedSem==='Summer'?'selected':''; ?>>Summer</option>
@@ -1022,7 +1022,7 @@ if (count($departments)) {
         echo '<td>' . htmlspecialchars($department['name']) . '</td>';
         echo '<td class="actions-cell">';
         echo '<a href="?edit_department=' . intval($department['id']) . '#department-block" class="icon-button" title="Edit department" style="text-decoration:none;"><i class="fa-solid fa-pen-to-square" style="color:#10b981;"></i></a>';
-        echo '<form method="post" style="display:inline;" onsubmit="return confirm(\'Delete this department?\');"><input type="hidden" name="delete_department" value="1"><input type="hidden" name="dept_id" value="' . intval($department['id']) . '"><button type="submit" class="icon-button" title="Delete department" style="background:transparent;border:none;padding:2px;"><i class="fa-solid fa-trash-can" style="color:#ef4444;"></i></button></form>';
+        echo '<form method="post" class="delete-form" data-confirm="Delete this department?"><input type="hidden" name="delete_department" value="1"><input type="hidden" name="dept_id" value="' . intval($department['id']) . '"><button type="submit" class="icon-button" title="Delete department" style="background:transparent;border:none;padding:2px;"><i class="fa-solid fa-trash-can" style="color:#ef4444;"></i></button></form>';
         echo '</td>';
         echo '</tr>';
     }
@@ -1144,7 +1144,7 @@ if (count($sections)) {
         echo '<td>' . htmlspecialchars($section['department'] ?? '') . '</td>';
         echo '<td class="actions-cell">';
         echo '<a href="?edit_section=' . intval($section['id']) . '#section-form" class="icon-button" title="Edit section" style="text-decoration:none;"><i class="fa-solid fa-pen-to-square" style="color:#10b981;"></i></a>';
-        echo '<form method="post" style="display:inline;" onsubmit="return confirm(\'Delete this section?\');"><input type="hidden" name="delete_section" value="1"><input type="hidden" name="section_id" value="' . intval($section['id']) . '"><button type="submit" class="icon-button" title="Delete section" style="background:transparent;border:none;padding:2px;"><i class="fa-solid fa-trash-can" style="color:#ef4444;"></i></button></form>';
+        echo '<form method="post" class="delete-form" data-confirm="Delete this section?"><input type="hidden" name="delete_section" value="1"><input type="hidden" name="section_id" value="' . intval($section['id']) . '"><button type="submit" class="icon-button" title="Delete section" style="background:transparent;border:none;padding:2px;"><i class="fa-solid fa-trash-can" style="color:#ef4444;"></i></button></form>';
         echo '</td>';
         echo '</tr>';
     }
@@ -1159,6 +1159,9 @@ if (count($sections)) {
     </div>
   </div>
   <script>
+    const yearSelect = document.getElementById('global-filter-year');
+    const semSelect = document.getElementById('global-filter-sem');
+
     function syncGlobalFilter() {
       const year = document.getElementById('global-filter-year').value;
       const sem  = document.getElementById('global-filter-sem').value;
@@ -1172,6 +1175,9 @@ if (count($sections)) {
     }
 
     document.addEventListener('DOMContentLoaded', function () {
+      if (yearSelect) yearSelect.addEventListener('change', syncGlobalFilter);
+      if (semSelect) semSelect.addEventListener('change', syncGlobalFilter);
+
       const departmentForm = document.getElementById('department-form');
       const sectionForm = document.getElementById('section-form');
       const departmentTableBody = document.getElementById('departments-table-body');
@@ -1274,6 +1280,13 @@ if (count($sections)) {
           filterTableRows(this, sectionTableBody, 'No sections matched your search.');
         });
       }
+
+      document.querySelectorAll('.delete-form').forEach(form => {
+        form.addEventListener('submit', function(e) {
+          const msg = this.getAttribute('data-confirm') || 'Are you sure?';
+          if (!confirm(msg)) e.preventDefault();
+        });
+      });
 
       if (!departmentTableBody.querySelector('tr')) {
         renderEmptyRow(departmentTableBody, 3, 'No departments available.');

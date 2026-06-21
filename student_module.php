@@ -92,9 +92,9 @@ foreach ($assignedSubjects as $subj) {
         'prelim' => $gradeMatch['prelim'] ?? null,
         'midterm' => $gradeMatch['midterm'] ?? null,
         'finals' => $gradeMatch['finals'] ?? null,
-        'average' => $gradeMatch['average'] ?? null,
-        'gwa' => $gradeMatch['gwa'] ?? null,
-        'remarks' => $gradeMatch['remarks'] ?? null,
+        'average' => (isset($gradeMatch['prelim'], $gradeMatch['midterm'], $gradeMatch['finals']) && $gradeMatch['prelim'] !== null && $gradeMatch['midterm'] !== null && $gradeMatch['finals'] !== null) ? ($gradeMatch['average'] ?? null) : null,
+        'gwa' => (isset($gradeMatch['prelim'], $gradeMatch['midterm'], $gradeMatch['finals']) && $gradeMatch['prelim'] !== null && $gradeMatch['midterm'] !== null && $gradeMatch['finals'] !== null) ? ($gradeMatch['gwa'] ?? null) : null,
+        'remarks' => (isset($gradeMatch['prelim'], $gradeMatch['midterm'], $gradeMatch['finals']) && $gradeMatch['prelim'] !== null && $gradeMatch['midterm'] !== null && $gradeMatch['finals'] !== null) ? ($gradeMatch['remarks'] ?? null) : null,
     ];
     $seenSubjectCodes[$subjectCode] = true;
 }
@@ -110,9 +110,9 @@ foreach ($grades as $g) {
         'prelim' => $g['prelim'] ?? null,
         'midterm' => $g['midterm'] ?? null,
         'finals' => $g['finals'] ?? null,
-        'average' => $g['average'] ?? null,
-        'gwa' => $g['gwa'] ?? null,
-        'remarks' => $g['remarks'] ?? null,
+        'average' => (isset($g['prelim'], $g['midterm'], $g['finals']) && $g['prelim'] !== null && $g['midterm'] !== null && $g['finals'] !== null) ? ($g['average'] ?? null) : null,
+        'gwa' => (isset($g['prelim'], $g['midterm'], $g['finals']) && $g['prelim'] !== null && $g['midterm'] !== null && $g['finals'] !== null) ? ($g['gwa'] ?? null) : null,
+        'remarks' => (isset($g['prelim'], $g['midterm'], $g['finals']) && $g['prelim'] !== null && $g['midterm'] !== null && $g['finals'] !== null) ? ($g['remarks'] ?? null) : null,
     ];
     $seenSubjectCodes[$subjectCode] = true;
 }
@@ -203,12 +203,12 @@ $totalAvg = $totalUnits > 0 ? $totalWeightedAvg / $totalUnits : 0;
       <fieldset style="border:none;">
         <legend>Select Year & Semester</legend>
         <div class="filter-group-selectors">
-          <select name="global_year" class="form-control" onchange="this.form.submit()">
+          <select name="global_year" class="form-control" id="student-year-select">
             <?php foreach ($yearOptions as $y): ?>
               <option value="<?php echo htmlspecialchars($y); ?>" <?php echo $filterYear===$y?'selected':''; ?>><?php echo htmlspecialchars($y); ?></option>
             <?php endforeach; ?>
           </select>
-          <select name="global_sem" class="form-control" onchange="this.form.submit()">
+          <select name="global_sem" class="form-control" id="student-sem-select">
             <?php foreach ($semOptions as $s): ?>
               <option value="<?php echo htmlspecialchars($s); ?>" <?php echo $filterSem===$s?'selected':''; ?>><?php echo htmlspecialchars($s); ?></option>
             <?php endforeach; ?>
@@ -287,7 +287,21 @@ $totalAvg = $totalUnits > 0 ? $totalWeightedAvg / $totalUnits : 0;
         </div>
       </footer>
     </section>
-  </main>
+   </main>
 
-</body>
+   <script>
+     const yearSelect = document.getElementById('student-year-select');
+     const semSelect = document.getElementById('student-sem-select');
+     const filterForm = document.querySelector('.filter-card form');
+
+     function submitFilterForm() {
+       if (filterForm) filterForm.submit();
+     }
+
+     document.addEventListener('DOMContentLoaded', function() {
+       if (yearSelect) yearSelect.addEventListener('change', submitFilterForm);
+       if (semSelect) semSelect.addEventListener('change', submitFilterForm);
+     });
+   </script>
+ </body>
 </html>

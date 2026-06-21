@@ -662,12 +662,24 @@ function set_deadline(string $schoolYear, string $semester, string $gradingPerio
     return (bool)$ok;
 }
 
-function is_period_open_for_teacher(int $teacherId, string $schoolYear, string $semester, string $gradingPeriod): bool {
-    $status = get_deadline_status($schoolYear, $semester, $gradingPeriod);
-    if ($status === 'open' || $status === 'extended') {
-        return true;
-    }
+function has_teacher_submitted_grades(int $teacherId, string $schoolYear, string $semester, string $gradingPeriod): bool {
+    $conn = db_connect();
+    if (!$conn) return false;
 
+    $stmt = $conn->prepare("SELECT COUNT(*) as cnt FROM grades WHERE teacher_id = ? AND school_year = ? AND semester = ? AND {$gradingPeriod} IS NOT NULL LIMIT 1");
+    if (!$stmt) { $conn->close(); return false; }
+
+    $stmt->bind_param('iss', $teacherId, $schoolYear, $semester);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $row = $res ? $res->fetch_assoc() : null;
+    $stmt->close();
+    $conn->close();
+
+    return $row ? ((int)$row['cnt'] > 0) : false;
+}
+
+function is_period_open_for_teacher(int $teacherId, string $schoolYear, string $semester, string $gradingPeriod): bool {
     $conn = db_connect();
     if (!$conn) return false;
 
@@ -684,7 +696,14 @@ function is_period_open_for_teacher(int $teacherId, string $schoolYear, string $
     $stmt->close();
     $conn->close();
 
-    return (bool)$hasGrant;
+    if ($hasGrant) return true;
+
+    $status = get_deadline_status($schoolYear, $semester, $gradingPeriod);
+    if ($status === 'open' || $status === 'extended') {
+        return !has_teacher_submitted_grades($teacherId, $schoolYear, $semester, $gradingPeriod);
+    }
+
+    return false;
 }
 
 function create_notification(int $userId, string $userRole, string $title, string $message, string $type = 'info', ?string $link = null): bool {
@@ -934,6 +953,17 @@ function create_student(string $firstName, ?string $middleName, string $lastName
     $ok = $stmt->execute();
     $id = $conn->insert_id;
     $stmt->close();
+
+    if ($ok && $id) {
+        $upd = $conn->prepare("UPDATE students SET student_id = ? WHERE id = ?");
+        if ($upd) {
+            $generatedId = 'S-' . sprintf('%03d', $id);
+            $upd->bind_param('si', $generatedId, $id);
+            $upd->execute();
+            $upd->close();
+        }
+    }
+
     $conn->close();
 
     if ($ok) {

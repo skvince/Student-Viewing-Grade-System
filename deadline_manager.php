@@ -646,7 +646,7 @@ foreach ($deadlines as $d) {
             <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
             Academic Year:
           </label>
-          <select id="global-filter-year" class="global-select" onchange="syncGlobalFilter()">
+          <select id="global-filter-year" class="global-select">
             <option value="2025-2026" <?php echo $selectedYear==='2025-2026'?'selected':''; ?>>2025–2026</option>
             <option value="2026-2027" <?php echo $selectedYear==='2026-2027'?'selected':''; ?>>2026–2027</option>
           </select>
@@ -656,7 +656,7 @@ foreach ($deadlines as $d) {
           <label for="global-filter-sem">
             <i class="fa-solid fa-clock" aria-hidden="true"></i> Semester:
           </label>
-          <select id="global-filter-sem" class="global-select" onchange="syncGlobalFilter()">
+          <select id="global-filter-sem" class="global-select">
             <option value="1st Semester" <?php echo $selectedSem==='1st Semester'?'selected':''; ?>>1st Semester</option>
             <option value="2nd Semester" <?php echo $selectedSem==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
             <option value="Summer" <?php echo $selectedSem==='Summer'?'selected':''; ?>>Summer</option>
@@ -696,7 +696,7 @@ foreach ($deadlines as $d) {
                   <option value="extended" <?php echo $status==='extended'?'selected':''; ?>>Extended</option>
                 </select>
               </div>
-              <button type="button" class="btn-submit" onclick="saveDeadline('<?php echo $period; ?>')">
+              <button type="button" class="btn-submit btn-save-deadline" data-period="<?php echo $period; ?>">
                 <i class="fa-solid fa-floppy-disk"></i> Save
               </button>
             </div>
@@ -745,12 +745,12 @@ foreach ($deadlines as $d) {
                 </td>
                 <td>
                   <?php if ($status === 'closed'): ?>
-                    <button type="button" class="btn-action btn-reopen" onclick="reopenDeadline('<?php echo $period; ?>')">
+                    <button type="button" class="btn-action btn-reopen btn-reopen-deadline" data-period="<?php echo $period; ?>">
                       <i class="fa-solid fa-unlock"></i> Reopen
                     </button>
                   <?php endif; ?>
                   <?php if ($status !== 'closed'): ?>
-                    <button type="button" class="btn-action btn-extend" onclick="openExtendModal('<?php echo $period; ?>')">
+                    <button type="button" class="btn-action btn-extend btn-extend-deadline" data-period="<?php echo $period; ?>">
                       <i class="fa-solid fa-clock"></i> Extend
                     </button>
                   <?php endif; ?>
@@ -765,7 +765,7 @@ foreach ($deadlines as $d) {
 
   <div id="extend-modal-backdrop" class="modal-backdrop">
     <div class="modal-card">
-      <button type="button" class="modal-close" onclick="closeExtendModal()">
+      <button type="button" class="modal-close" id="btn-close-extend-modal">
         <i class="fa-solid fa-xmark"></i>
       </button>
       <h3 style="margin-bottom:16px;">Extend Deadline</h3>
@@ -780,13 +780,19 @@ foreach ($deadlines as $d) {
           <button type="submit" class="btn-submit">
             <i class="fa-solid fa-floppy-disk"></i> Save
           </button>
-          <button type="button" class="btn-cancel" onclick="closeExtendModal()">Cancel</button>
+          <button type="button" class="btn-cancel" id="btn-cancel-extend">Cancel</button>
         </div>
       </form>
     </div>
   </div>
 
   <script>
+    const yearSelect = document.getElementById('global-filter-year');
+    const semSelect = document.getElementById('global-filter-sem');
+    const extendModalBackdrop = document.getElementById('extend-modal-backdrop');
+    const btnCloseExtendModal = document.getElementById('btn-close-extend-modal');
+    const btnCancelExtend = document.getElementById('btn-cancel-extend');
+
     function syncGlobalFilter() {
       const year = document.getElementById('global-filter-year').value;
       const sem  = document.getElementById('global-filter-sem').value;
@@ -858,17 +864,46 @@ foreach ($deadlines as $d) {
 
     function openExtendModal(period) {
       document.getElementById('extend-grading-period').value = period;
-      document.getElementById('extend-modal-backdrop').style.display = 'flex';
+      extendModalBackdrop.style.display = 'flex';
     }
 
     function closeExtendModal() {
-      document.getElementById('extend-modal-backdrop').style.display = 'none';
+      extendModalBackdrop.style.display = 'none';
       document.getElementById('extend-form').reset();
     }
 
-    window.addEventListener('click', function(e) {
-      if (e.target === document.getElementById('extend-modal-backdrop')) {
-        closeExtendModal();
+    document.addEventListener('DOMContentLoaded', function() {
+      if (yearSelect) yearSelect.addEventListener('change', syncGlobalFilter);
+      if (semSelect) semSelect.addEventListener('change', syncGlobalFilter);
+
+      document.querySelectorAll('.btn-save-deadline').forEach(btn => {
+        btn.addEventListener('click', function() {
+          saveDeadline(this.getAttribute('data-period'));
+        });
+      });
+
+      document.querySelectorAll('.btn-reopen-deadline').forEach(btn => {
+        btn.addEventListener('click', function() {
+          reopenDeadline(this.getAttribute('data-period'));
+        });
+      });
+
+      document.querySelectorAll('.btn-extend-deadline').forEach(btn => {
+        btn.addEventListener('click', function() {
+          openExtendModal(this.getAttribute('data-period'));
+        });
+      });
+
+      if (btnCloseExtendModal) {
+        btnCloseExtendModal.addEventListener('click', closeExtendModal);
+      }
+      if (btnCancelExtend) {
+        btnCancelExtend.addEventListener('click', closeExtendModal);
+      }
+      if (extendModalBackdrop) {
+        extendModalBackdrop.addEventListener('click', function(e) {
+          if (e.target === extendModalBackdrop) closeExtendModal();
+        });
       }
     });
   </script>

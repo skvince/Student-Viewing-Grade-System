@@ -87,6 +87,7 @@ $_SESSION['teacher_sem'] = $semester;
         .badge-approved { background-color:#d1fae5; color:#065f46; }
         .badge-rejected { background-color:#fee2e2; color:#991b1b; }
         .badge-closed { background-color:#e5e7eb; color:#374151; }
+        .badge-open { background-color:#d1fae5; color:#065f46; }
         .alert { padding:12px 16px; border-radius:6px; margin-bottom:16px; font-size:0.85rem; }
         .alert-error { background-color:#fee2e2; color:#991b1b; }
         .modal-backdrop { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(15,23,42,0.4); backdrop-filter:blur(10px); z-index:999; padding:24px; }
@@ -161,7 +162,7 @@ $_SESSION['teacher_sem'] = $semester;
             <div class="global-term-container">
                 <div class="filter-group">
                     <label for="global-sy-select"><i class="fa-solid fa-calendar-days"></i> Academic Year:</label>
-                    <select id="global-sy-select" class="global-select" onchange="syncTeacherFilter()">
+                    <select id="global-sy-select" class="global-select">
                         <?php foreach (['2025-2026','2026-2027'] as $y): ?>
                             <option value="<?php echo $y; ?>" <?php echo $schoolYear===$y?'selected':''; ?>><?php echo $y; ?></option>
                         <?php endforeach; ?>
@@ -169,7 +170,7 @@ $_SESSION['teacher_sem'] = $semester;
                 </div>
                 <div class="filter-group">
                     <label for="global-sem-select"><i class="fa-solid fa-clock"></i> Semester:</label>
-                    <select id="global-sem-select" class="global-select" onchange="syncTeacherFilter()">
+                    <select id="global-sem-select" class="global-select">
                         <option value="1st Semester" <?php echo $semester==='1st Semester'?'selected':''; ?>>1st Semester</option>
                         <option value="2nd Semester" <?php echo $semester==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
                         <option value="Summer" <?php echo $semester==='Summer'?'selected':''; ?>>Summer</option>

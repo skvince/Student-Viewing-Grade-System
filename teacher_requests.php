@@ -73,6 +73,20 @@ if (!empty($sections)) {
 }
 
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $reqSectionId = intval($_POST['request_section_id'] ?? 0);
+    $reqSubjectId = intval($_POST['request_subject_id'] ?? 0);
+    $reqPeriod = strtolower(trim($_POST['request_period'] ?? ''));
+    $reqReason = trim($_POST['request_reason'] ?? '');
+
+    if (in_array($reqPeriod, ['prelim', 'midterm', 'finals'], true) && $reqReason !== '' && $reqSectionId && $reqSubjectId) {
+        save_grade_change_request($userId, $reqSectionId, $reqSubjectId, $schoolYear, $semester, $reqPeriod, $reqReason);
+    }
+
+    header('Location: ' . $_SERVER['PHP_SELF'] . '?global_year=' . urlencode($schoolYear) . '&global_sem=' . urlencode($semester));
+    exit;
+}
+
 $requests = [];
 $conn = db_connect();
 if ($conn) {
@@ -102,7 +116,7 @@ require_once __DIR__ . '/inc/teacher_layout.php';
         <h1 class="view-title">My Requests</h1>
         <p class="view-subtitle">Track your grade change requests</p>
     </div>
-    <button type="button" class="btn btn-request" onclick="openRequestModal('prelim')"><i class="fa-solid fa-plus"></i> New Request</button>
+    <button type="button" class="btn btn-request" id="btn-new-request"><i class="fa-solid fa-plus"></i> New Request</button>
 </div>
 
 <div class="panel-block">
@@ -133,10 +147,17 @@ require_once __DIR__ . '/inc/teacher_layout.php';
 
 <div id="request-modal-backdrop" class="modal-backdrop">
     <div class="modal-card">
-        <button type="button" class="modal-close" onclick="closeRequestModal()"><i class="fa-solid fa-xmark"></i></button>
+        <button type="button" class="modal-close" id="btn-close-request-modal"><i class="fa-solid fa-xmark"></i></button>
         <h3 style="margin-bottom:16px;">Request Permission</h3>
         <form method="post" id="request-form">
-            <input type="hidden" name="request_period" id="request-period" value="">
+            <div class="form-group">
+                <label>Grading Period</label>
+                <select name="request_period" id="request-period" class="form-control" required>
+                    <option value="prelim">Prelim</option>
+                    <option value="midterm">Midterm</option>
+                    <option value="finals">Finals</option>
+                </select>
+            </div>
             <div class="form-group">
                 <label>Section</label>
                 <select name="request_section_id" class="form-control" required>
@@ -162,20 +183,22 @@ require_once __DIR__ . '/inc/teacher_layout.php';
                 <textarea name="request_reason" class="form-control" rows="4" required placeholder="Please explain why you need access..."></textarea>
             </div>
             <div style="display:flex; gap:12px; align-items:center;">
-                <button type="submit" class="btn btn-submit"><i class="fa-solid fa-paper-plane"></i> Submit Request</button>
-                <button type="button" class="btn-cancel" onclick="closeRequestModal()">Cancel</button>
+                <button type="submit" name="request_permission" class="btn btn-submit"><i class="fa-solid fa-paper-plane"></i> Submit Request</button>
+                <button type="button" class="btn-cancel" id="btn-cancel-request">Cancel</button>
             </div>
         </form>
     </div>
 </div>
 
 <script>
-    function openRequestModal(period) {
-        document.getElementById('request-period').value = period;
-        document.getElementById('request-modal-backdrop').style.display = 'flex';
+    const btnNewRequest = document.getElementById('btn-new-request');
+    const requestModalBackdrop = document.getElementById('request-modal-backdrop');
+    const btnCloseRequestModal = document.getElementById('btn-close-request-modal');
+    const btnCancelRequest = document.getElementById('btn-cancel-request');
 
-        // Force placeholders each time modal opens.
-        // Keep teacher sections already rendered; only reset selected values.
+    function openRequestModal() {
+        requestModalBackdrop.style.display = 'flex';
+
         const sectionSelect = document.querySelector('select[name="request_section_id"]');
         const subjectSelect = document.querySelector('select[name="request_subject_id"]');
 
@@ -189,26 +212,16 @@ require_once __DIR__ . '/inc/teacher_layout.php';
         }
     }
 
-
-
     function closeRequestModal() {
-        document.getElementById('request-modal-backdrop').style.display = 'none';
-
-        
+        requestModalBackdrop.style.display = 'none';
         document.getElementById('request-form').querySelectorAll('textarea, input').forEach(function(el){ if(el.tagName && el.tagName.toLowerCase()==='textarea') el.value=''; if(el.type==='text') el.value='';});
     }
 
-
-    // Sync subjects based on selected section (client-side).
-
-
-    // Data is generated server-side from $sections (teacher's assigned modules only).
     const TEACHER_SECTIONS = <?php echo json_encode(array_map(function ($sec) {
         return [
             'subjects' => $sec['subjects'] ?? []
         ];
     }, $sections)); ?>;
-
 
     function updateRequestSubjects() {
         const sectionSelect = document.querySelector('select[name="request_section_id"]');
@@ -222,18 +235,15 @@ require_once __DIR__ . '/inc/teacher_layout.php';
 
         const currentSubject = parseInt(subjectSelect.value || '0', 10);
 
-        // Rebuild subject dropdown
         subjectSelect.innerHTML = '';
 
         subjects.forEach(function (s, idx) {
-
             const opt = document.createElement('option');
             opt.value = s.subject_id;
             opt.textContent = (s.code ? s.code : '') + (s.code ? ' - ' : '') + (s.title ? s.title : '');
             subjectSelect.appendChild(opt);
         });
 
-        // Select first subject if current not present
         const hasCurrent = subjects.some(function (s) { return parseInt(s.subject_id, 10) === currentSubject; });
         if (subjects.length > 0 && !hasCurrent) {
             subjectSelect.value = subjects[0].subject_id;
@@ -242,19 +252,26 @@ require_once __DIR__ . '/inc/teacher_layout.php';
         }
     }
 
-    window.addEventListener('DOMContentLoaded', function () {
+    document.addEventListener('DOMContentLoaded', function () {
+        if (btnNewRequest) {
+            btnNewRequest.addEventListener('click', openRequestModal);
+        }
+        if (btnCloseRequestModal) {
+            btnCloseRequestModal.addEventListener('click', closeRequestModal);
+        }
+        if (btnCancelRequest) {
+            btnCancelRequest.addEventListener('click', closeRequestModal);
+        }
+        if (requestModalBackdrop) {
+            requestModalBackdrop.addEventListener('click', function(e) {
+                if (e.target === requestModalBackdrop) closeRequestModal();
+            });
+        }
+
         const sectionSelect = document.querySelector('select[name="request_section_id"]');
         if (sectionSelect) {
             sectionSelect.addEventListener('change', updateRequestSubjects);
             updateRequestSubjects();
-        }
-    });
-
-
-
-    window.addEventListener('click', function(e) {
-        if (e.target === document.getElementById('request-modal-backdrop')) {
-            closeRequestModal();
         }
     });
 </script>

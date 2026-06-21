@@ -938,7 +938,7 @@ $studentSaveError = '';
               <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
               Academic Year:
             </label>
-            <select id="global-filter-year" class="global-select" onchange="syncGlobalFilter()">
+            <select id="global-filter-year" class="global-select">
               <option value="2025-2026" <?php echo $selectedYear==='2025-2026'?'selected':''; ?>>2025–2026</option>
               <option value="2026-2027" <?php echo $selectedYear==='2026-2027'?'selected':''; ?>>2026–2027</option>
             </select>
@@ -948,7 +948,7 @@ $studentSaveError = '';
             <label for="global-filter-sem">
               <i class="fa-solid fa-clock" aria-hidden="true"></i> Semester:
             </label>
-              <select id="global-filter-sem" class="global-select" onchange="syncGlobalFilter()">
+              <select id="global-filter-sem" class="global-select">
                 <option value="1st Semester" <?php echo $selectedSem==='1st Semester'?'selected':''; ?>>1st Semester</option>
                 <option value="2nd Semester" <?php echo $selectedSem==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
                 <option value="Summer" <?php echo $selectedSem==='Summer'?'selected':''; ?>>Summer</option>
@@ -987,14 +987,14 @@ $studentSaveError = '';
                         border: 1px solid #ccc;
                       " />
                 </div>
-                <button type="button" id="btn-add-student" class="btn-add" onclick="var m=document.getElementById('modal-backdrop'); if (!m) return; m.style.display='flex'; this.style.display='none';" style="<?php echo $isEditingStudent ? 'display:none;' : ''; ?>">
+                <button type="button" id="btn-add-student" class="btn-add" style="<?php echo $isEditingStudent ? 'display:none;' : ''; ?>">
                   <i class="fa-solid fa-plus"></i> Add Student
                 </button>
               </div>
             </div>
               <div id="modal-backdrop" class="modal-backdrop" style="<?php echo $isEditingStudent ? 'display:flex;' : 'display:none;'; ?>">
               <div id="modal-card" class="student-form-card">
-                <button type="button" class="student-form-close" onclick="document.getElementById('modal-backdrop').style.display='none'; document.getElementById('btn-add-student').style.display='inline-flex';">
+                <button type="button" class="student-form-close" id="btn-close-student-modal">
                   <i class="fa-solid fa-xmark"></i>
                 </button>
                 <?php if ($studentSaveError): ?>
@@ -1093,15 +1093,15 @@ $studentSaveError = '';
                             $fullName = htmlspecialchars($row['first_name'] . ' ' . ($row['middle_name'] ? $row['middle_name'] . ' ' : '') . $row['last_name']);
                             $passwordHint = htmlspecialchars(strtoupper(substr($row['first_name'], 0, 1)) . str_replace(' ', '_', $row['last_name']));
                             echo '<tr>';
-                            echo '<td>' . htmlspecialchars($row['student_id'] ?? ('S-' . sprintf('%03d', $row['id']))) . '</td>';
+                             echo '<td>' . htmlspecialchars(!empty($row['student_id']) ? $row['student_id'] : ('S-' . sprintf('%03d', $row['id']))) . '</td>';
                             echo '<td>' . $fullName . '</td>';
                             echo '<td>' . htmlspecialchars($row['department'] ?? '') . '</td>';
                             $sectionDisplay = trim($row['section_name'] ?? '');
                             echo '<td>' . htmlspecialchars($sectionDisplay) . '</td>';
-                            echo '<td><div class="password-cell"><span class="password-dots" id="pwd-dots-' . intval($row['id']) . '">••••••••</span><span class="password-text" id="pwd-text-' . intval($row['id']) . '" style="display:none;">' . $passwordHint . '</span><button type="button" class="icon-button" onclick="togglePassword(' . intval($row['id']) . ')" title="Show/Hide password"><i class="fa-solid fa-eye" id="pwd-eye-' . intval($row['id']) . '"></i></button></div></td>';
+                            echo '<td><div class="password-cell"><span class="password-dots" id="pwd-dots-' . intval($row['id']) . '">••••••••</span><span class="password-text" id="pwd-text-' . intval($row['id']) . '" style="display:none;">' . $passwordHint . '</span><button type="button" class="icon-button toggle-password-btn" data-user-id="' . intval($row['id']) . '" title="Show/Hide password"><i class="fa-solid fa-eye" id="pwd-eye-' . intval($row['id']) . '"></i></button></div></td>';
                             echo '<td class="actions-cell">';
                             echo '<a href="?edit_student=' . intval($row['id']) . '" class="icon-button" title="Edit student" style="text-decoration:none;"><i class="fa-solid fa-pen-to-square" style="color:#10b981;"></i></a>';
-                            echo '<form method="post" style="display:inline;" onsubmit="return confirm(\'Delete this student?\');"><input type="hidden" name="delete_student" value="1"><input type="hidden" name="student_id" value="' . intval($row['id']) . '"><button type="submit" class="icon-button" title="Delete student"><i class="fa-solid fa-trash-can"></i></button></form>';
+                            echo '<form method="post" class="delete-form" data-confirm="Delete this student?"><input type="hidden" name="delete_student" value="1"><input type="hidden" name="student_id" value="' . intval($row['id']) . '"><button type="submit" class="icon-button" title="Delete student"><i class="fa-solid fa-trash-can"></i></button></form>';
                             echo '</td>';
                             echo '</tr>';
                         }
@@ -1123,6 +1123,28 @@ $studentSaveError = '';
         </div>
       </div>
       <script>
+        const btnAddStudent = document.getElementById('btn-add-student');
+        const modalBackdrop = document.getElementById('modal-backdrop');
+        const btnCloseStudentModal = document.getElementById('btn-close-student-modal');
+        const yearSelect = document.getElementById('global-filter-year');
+        const semSelect = document.getElementById('global-filter-sem');
+        const studentIdField = document.getElementById('student-id-field');
+        const submitBtn = document.getElementById('submit-btn');
+
+        function openStudentModal() {
+          if (!modalBackdrop) return;
+          modalBackdrop.style.display = 'flex';
+          if (btnAddStudent) btnAddStudent.style.display = 'none';
+          resetForm();
+        }
+
+        function closeStudentModal() {
+          if (!modalBackdrop) return;
+          modalBackdrop.style.display = 'none';
+          if (btnAddStudent) btnAddStudent.style.display = 'inline-flex';
+          resetForm();
+        }
+
         function editStudent(id, firstName, middleName, lastName, department, sectionId) {
           document.getElementById('student-id-field').value = id;
           document.getElementById('first_name').value = firstName;
@@ -1182,24 +1204,53 @@ $studentSaveError = '';
           form.submit();
         }
 
-        document.querySelectorAll('.table-search-input').forEach(input => {
-          input.addEventListener('input', function() {
-            const query = this.value.toLowerCase();
-            document.querySelectorAll('#students-table tbody tr').forEach(row => {
-              row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
+        document.addEventListener('DOMContentLoaded', function() {
+          if (btnAddStudent) {
+            btnAddStudent.addEventListener('click', openStudentModal);
+          }
+          if (btnCloseStudentModal) {
+            btnCloseStudentModal.addEventListener('click', closeStudentModal);
+          }
+          if (modalBackdrop) {
+            modalBackdrop.addEventListener('click', function(e) {
+              if (e.target === modalBackdrop) closeStudentModal();
+            });
+          }
+          if (yearSelect) {
+            yearSelect.addEventListener('change', syncGlobalFilter);
+          }
+          if (semSelect) {
+            semSelect.addEventListener('change', syncGlobalFilter);
+          }
+
+          document.querySelectorAll('.table-search-input').forEach(input => {
+            input.addEventListener('input', function() {
+              const query = this.value.toLowerCase();
+              document.querySelectorAll('#students-table tbody tr').forEach(row => {
+                row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
+              });
             });
           });
+
+          document.querySelectorAll('.toggle-password-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+              const userId = this.getAttribute('data-user-id');
+              if (userId) togglePassword(userId);
+            });
+          });
+
+          document.querySelectorAll('.delete-form').forEach(form => {
+            form.addEventListener('submit', function(e) {
+              const msg = this.getAttribute('data-confirm') || 'Are you sure?';
+              if (!confirm(msg)) e.preventDefault();
+            });
+          });
+
+          if (studentIdField && studentIdField.value) {
+            submitBtn.name = 'update_student';
+            submitBtn.textContent = 'Update Student';
+          }
         });
-
-        // Reset form when closing modal
-        document.getElementById('btn-add-student').addEventListener('click', resetForm);
-
-        if (document.getElementById('student-id-field').value) {
-          document.getElementById('form-title').textContent = 'Edit Student';
-          document.getElementById('form-subtitle').textContent = 'Update the student details below.';
-          document.getElementById('submit-btn').name = 'update_student';
-          document.getElementById('submit-btn').textContent = 'Update Student';
-        }
       </script>
     </body>
     </html>

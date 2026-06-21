@@ -116,9 +116,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_all_grades'])) {
 
             $conn2 = db_connect();
             if ($conn2) {
-                $upd = $conn2->prepare("UPDATE grades SET {$period} = ?, updated_at = NOW() WHERE student_id = ? AND subject_id = ? AND school_year = ? AND semester = ?");
+                $upd = $conn2->prepare("UPDATE grades SET {$period} = ?, teacher_id = ?, updated_at = NOW() WHERE student_id = ? AND subject_id = ? AND school_year = ? AND semester = ?");
                 if ($upd) {
-                    $upd->bind_param('diiss', $val, $sid, $subjectId, $sy, $sem);
+                    $upd->bind_param('diiiss', $val, $userId, $sid, $subjectId, $sy, $sem);
                     $upd->execute();
                     $upd->close();
                 }
@@ -200,19 +200,19 @@ require_once __DIR__ . '/inc/teacher_layout.php';
 
     <?php
     $anyOpen = ($isPeriodOpen['prelim'] ?? false) || ($isPeriodOpen['midterm'] ?? false) || ($isPeriodOpen['finals'] ?? false);
-    $allClosed = !($isPeriodOpen['prelim'] ?? false) && !($isPeriodOpen['midterm'] ?? false) && !($isPeriodOpen['finals'] ?? false);
+    $allOpen = ($isPeriodOpen['prelim'] ?? false) && ($isPeriodOpen['midterm'] ?? false) && ($isPeriodOpen['finals'] ?? false);
     ?>
 
     <div class="panel-block">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
             <h2 class="block-title" style="margin:0;">Grade Entry</h2>
-            <?php if ($allClosed): ?>
-                <button type="button" class="btn btn-request" onclick="openRequestModal('prelim')"><i class="fa-solid fa-hand"></i> Request Permission</button>
+            <?php if (!$allOpen): ?>
+                <button type="button" class="btn btn-request" id="btn-request-permission"><i class="fa-solid fa-hand"></i> Request Permission to Edit</button>
             <?php endif; ?>
         </div>
 
-        <?php if ($allClosed): ?>
-            <div class="alert alert-error" style="margin-bottom:16px;"><i class="fa-solid fa-circle-exclamation"></i> All grading periods are currently closed for this class. Submit a request if you need access.</div>
+        <?php if (!$anyOpen): ?>
+            <div class="alert alert-error" style="margin-bottom:16px;"><i class="fa-solid fa-lock"></i> All grading periods are currently closed. Please contact the administrator to open them.</div>
         <?php endif; ?>
 
         <div class="grade-submission-wrapper">
@@ -228,9 +228,9 @@ require_once __DIR__ . '/inc/teacher_layout.php';
                             <tr>
                                 <th style="width:22%;">Student ID</th>
                                 <th style="width:32%;">Name</th>
-                                <th style="width:16%;">Prelim <span class="status-badge badge-<?php echo $periodStatus['prelim'] ?? 'closed'; ?>"><?php echo ucfirst($periodStatus['prelim'] ?? 'closed'); ?></span></th>
-                                <th style="width:16%;">Midterm <span class="status-badge badge-<?php echo $periodStatus['midterm'] ?? 'closed'; ?>"><?php echo ucfirst($periodStatus['midterm'] ?? 'closed'); ?></span></th>
-                                <th style="width:15%;">Finals <span class="status-badge badge-<?php echo $periodStatus['finals'] ?? 'closed'; ?>"><?php echo ucfirst($periodStatus['finals'] ?? 'closed'); ?></span></th>
+                                <th style="width:16%;">Prelim <span class="status-badge badge-<?php echo $isPeriodOpen['prelim'] ? 'open' : 'closed'; ?>"><?php echo $isPeriodOpen['prelim'] ? 'Open' : 'Closed'; ?></span></th>
+                                <th style="width:16%;">Midterm <span class="status-badge badge-<?php echo $isPeriodOpen['midterm'] ? 'open' : 'closed'; ?>"><?php echo $isPeriodOpen['midterm'] ? 'Open' : 'Closed'; ?></span></th>
+                                <th style="width:15%;">Finals <span class="status-badge badge-<?php echo $isPeriodOpen['finals'] ? 'open' : 'closed'; ?>"><?php echo $isPeriodOpen['finals'] ? 'Open' : 'Closed'; ?></span></th>
                                 <th style="width:14%;">Total Grade</th>
                                 <th style="width:13%;">GWA</th>
                             </tr>
@@ -243,11 +243,11 @@ require_once __DIR__ . '/inc/teacher_layout.php';
                                 $finalsDisabled = ($isPeriodOpen['finals'] ?? false) ? '' : 'disabled';
                             ?>
                             <tr>
-                                <td><span class="student-id"><?php echo htmlspecialchars($st['student_id']); ?></span></td>
+                                <td><span class="student-id"><?php echo htmlspecialchars($st['student_id']); ?></span><input type="hidden" name="student_ids[]" value="<?php echo $st['id']; ?>"></td>
                                 <td><span class="student-name"><?php echo htmlspecialchars(make_full_name($st['first_name'] ?? '', $st['middle_name'] ?? '', $st['last_name'] ?? '')); ?></span></td>
-                                <td><div class="grade-input-wrapper"><input type="number" step="0.01" name="prelim_values[]" class="grade-input grade-input--period" data-period="prelim" value="<?php echo htmlspecialchars($g['prelim'] ?? ''); ?>" <?php echo $prelimDisabled; ?>><input type="hidden" name="student_ids[]" value="<?php echo $st['id']; ?>"></div></td>
-                                <td><div class="grade-input-wrapper"><input type="number" step="0.01" name="midterm_values[]" class="grade-input grade-input--period" data-period="midterm" value="<?php echo htmlspecialchars($g['midterm'] ?? ''); ?>" <?php echo $midtermDisabled; ?>><input type="hidden" name="student_ids[]" value="<?php echo $st['id']; ?>"></div></td>
-                                <td><div class="grade-input-wrapper"><input type="number" step="0.01" name="finals_values[]" class="grade-input grade-input--period" data-period="finals" value="<?php echo htmlspecialchars($g['finals'] ?? ''); ?>" <?php echo $finalsDisabled; ?>><input type="hidden" name="student_ids[]" value="<?php echo $st['id']; ?>"></div></td>
+                                <td><div class="grade-input-wrapper"><input type="number" step="0.01" name="prelim_values[]" class="grade-input grade-input--period" data-period="prelim" value="<?php echo htmlspecialchars($g['prelim'] ?? ''); ?>" <?php echo $prelimDisabled; ?>></div></td>
+                                <td><div class="grade-input-wrapper"><input type="number" step="0.01" name="midterm_values[]" class="grade-input grade-input--period" data-period="midterm" value="<?php echo htmlspecialchars($g['midterm'] ?? ''); ?>" <?php echo $midtermDisabled; ?>></div></td>
+                                <td><div class="grade-input-wrapper"><input type="number" step="0.01" name="finals_values[]" class="grade-input grade-input--period" data-period="finals" value="<?php echo htmlspecialchars($g['finals'] ?? ''); ?>" <?php echo $finalsDisabled; ?>></div></td>
                                 <td><span class="total-grade">-</span></td>
                                 <td><span class="gwa-badge">-</span></td>
                             </tr>
@@ -263,43 +263,51 @@ require_once __DIR__ . '/inc/teacher_layout.php';
             </form>
         </div>
     </div>
-<?php endif; ?>
-
-<div id="request-modal-backdrop" class="modal-backdrop">
-    <div class="modal-card">
-        <button type="button" class="modal-close" onclick="closeRequestModal()"><i class="fa-solid fa-xmark"></i></button>
-        <h3 style="margin-bottom:16px;">Request Permission</h3>
-        <form method="post" id="request-form">
-            <input type="hidden" name="request_period" id="request-period" value="">
-            <div class="form-group">
-                <label>Section</label>
-                <select name="request_section_id" class="form-control" required>
-                    <option value="">Select section</option>
-                    <?php foreach ($sections as $sec): ?>
-                        <option value="<?php echo (int)$sec['id']; ?>" <?php echo $activeSectionId===$sec['id']?'selected':''; ?>><?php echo htmlspecialchars($sec['code'] ?? $sec['name']); ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Subject</label>
-                <select name="request_subject_id" class="form-control" required>
-                    <option value="">Select subject</option>
-                    <?php if ($activeSectionId && isset($sections[$activeSectionId]['subjects'])): foreach ($sections[$activeSectionId]['subjects'] as $subj): ?>
-                        <option value="<?php echo (int)$subj['subject_id']; ?>" <?php echo $activeSubjectId===$subj['subject_id']?'selected':''; ?>><?php echo htmlspecialchars($subj['code'] . ' - ' . $subj['title']); ?></option>
-                    <?php endforeach; endif; ?>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Reason for Request</label>
-                <textarea name="request_reason" class="form-control" rows="4" required placeholder="Please explain why you need access..."></textarea>
-            </div>
-            <div style="display:flex; gap:12px; align-items:center;">
-                <button type="submit" class="btn btn-submit"><i class="fa-solid fa-paper-plane"></i> Submit Request</button>
-                <button type="button" class="btn-cancel" onclick="closeRequestModal()">Cancel</button>
-            </div>
-        </form>
+    <?php if (!$allOpen): ?>
+    <div id="request-modal-backdrop" class="modal-backdrop">
+        <div class="modal-card">
+            <button type="button" class="modal-close" id="btn-close-request-modal"><i class="fa-solid fa-xmark"></i></button>
+            <h3 style="margin-bottom:16px;">Request Permission to Edit Grades</h3>
+            <form method="post" id="request-form">
+                <div class="form-group">
+                    <label>Grading Period</label>
+                    <select name="request_period" id="request-period" class="form-control" required>
+                        <?php foreach (['prelim' => 'Prelim', 'midterm' => 'Midterm', 'finals' => 'Finals'] as $key => $label): ?>
+                            <option value="<?php echo $key; ?>" <?php echo (!$isPeriodOpen[$key]) ? 'selected' : ''; ?>><?php echo $label; ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Section</label>
+                    <select name="request_section_id" class="form-control" required>
+                        <option value="">Select section</option>
+                        <?php foreach ($sections as $sec): ?>
+                            <option value="<?php echo (int)$sec['id']; ?>" <?php echo $activeSectionId===$sec['id']?'selected':''; ?>><?php echo htmlspecialchars($sec['code'] ?? $sec['name']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Subject</label>
+                    <select name="request_subject_id" class="form-control" required>
+                        <option value="">Select subject</option>
+                        <?php if ($activeSectionId && isset($sections[$activeSectionId]['subjects'])): foreach ($sections[$activeSectionId]['subjects'] as $subj): ?>
+                            <option value="<?php echo (int)$subj['subject_id']; ?>" <?php echo $activeSubjectId===$subj['subject_id']?'selected':''; ?>><?php echo htmlspecialchars($subj['code'] . ' - ' . $subj['title']); ?></option>
+                        <?php endforeach; endif; ?>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Reason for Request</label>
+                    <textarea name="request_reason" class="form-control" rows="4" required placeholder="Please explain why you need to edit..."></textarea>
+                </div>
+                <div style="display:flex; gap:12px; align-items:center;">
+                    <button type="submit" name="request_permission" class="btn btn-submit"><i class="fa-solid fa-paper-plane"></i> Submit Request</button>
+                    <button type="button" class="btn-cancel" id="btn-cancel-request">Cancel</button>
+                </div>
+            </form>
+        </div>
     </div>
-</div>
+    <?php endif; ?>
+<?php endif; ?>
 
 <script>
     function syncTeacherFilter() {
@@ -314,29 +322,48 @@ require_once __DIR__ . '/inc/teacher_layout.php';
         window.location.href = url.toString();
     }
 
-    function openRequestModal(period) {
-        document.getElementById('request-period').value = period;
-        document.getElementById('request-modal-backdrop').style.display = 'flex';
-    }
+    document.addEventListener('DOMContentLoaded', function() {
+        const yearSelect = document.getElementById('global-sy-select');
+        const semSelect = document.getElementById('global-sem-select');
+        if (yearSelect) yearSelect.addEventListener('change', syncTeacherFilter);
+        if (semSelect) semSelect.addEventListener('change', syncTeacherFilter);
 
-    function closeRequestModal() {
-        document.getElementById('request-modal-backdrop').style.display = 'none';
-        document.getElementById('request-form').reset();
-    }
+        const btnRequestPermission = document.getElementById('btn-request-permission');
+        const requestModalBackdrop = document.getElementById('request-modal-backdrop');
+        const btnCloseRequestModal = document.getElementById('btn-close-request-modal');
+        const btnCancelRequest = document.getElementById('btn-cancel-request');
 
-    window.addEventListener('click', function(e) {
-        if (e.target === document.getElementById('request-modal-backdrop')) {
-            closeRequestModal();
+        if (btnRequestPermission && requestModalBackdrop) {
+            btnRequestPermission.addEventListener('click', function() {
+                requestModalBackdrop.style.display = 'flex';
+            });
+        }
+        if (btnCloseRequestModal && requestModalBackdrop) {
+            btnCloseRequestModal.addEventListener('click', function() {
+                requestModalBackdrop.style.display = 'none';
+            });
+        }
+        if (btnCancelRequest && requestModalBackdrop) {
+            btnCancelRequest.addEventListener('click', function() {
+                requestModalBackdrop.style.display = 'none';
+            });
+        }
+        if (requestModalBackdrop) {
+            requestModalBackdrop.addEventListener('click', function(e) {
+                if (e.target === requestModalBackdrop) {
+                    requestModalBackdrop.style.display = 'none';
+                }
+            });
+        }
+
+        const sidebarToggle = document.getElementById('sidebar-toggle');
+        const sidebar = document.getElementById('sidebar');
+        if (sidebarToggle && sidebar) {
+            sidebarToggle.addEventListener('click', function() {
+                sidebar.classList.toggle('is-open');
+            });
         }
     });
-
-    const sidebarToggle = document.getElementById('sidebar-toggle');
-    const sidebar = document.getElementById('sidebar');
-    if (sidebarToggle && sidebar) {
-        sidebarToggle.addEventListener('click', function() {
-            sidebar.classList.toggle('is-open');
-        });
-    }
 </script>
 </body>
 </html>

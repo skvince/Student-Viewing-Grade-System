@@ -178,14 +178,14 @@ if ($conn) {
       <div class="global-term-container">
         <div class="filter-group">
           <label><i class="fa-solid fa-calendar-days"></i> Academic Year:</label>
-          <select id="global-filter-year" class="global-select" onchange="syncGlobalFilter()">
+          <select id="global-filter-year" class="global-select">
             <option value="2025-2026" <?php echo $selectedYear==='2025-2026'?'selected':''; ?>>2025–2026</option>
             <option value="2026-2027" <?php echo $selectedYear==='2026-2027'?'selected':''; ?>>2026–2027</option>
           </select>
         </div>
         <div class="filter-group">
           <label><i class="fa-solid fa-clock"></i> Semester:</label>
-          <select id="global-filter-sem" class="global-select" onchange="syncGlobalFilter()">
+          <select id="global-filter-sem" class="global-select">
             <option value="1st Semester" <?php echo $selectedSem==='1st Semester'?'selected':''; ?>>1st Semester</option>
             <option value="2nd Semester" <?php echo $selectedSem==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
             <option value="Summer" <?php echo $selectedSem==='Summer'?'selected':''; ?>>Summer</option>
@@ -263,6 +263,9 @@ if ($conn) {
   </div>
 
   <script>
+    const yearSelect = document.getElementById('global-filter-year');
+    const semSelect = document.getElementById('global-filter-sem');
+
     function syncGlobalFilter() {
       const year = document.getElementById('global-filter-year').value;
       const sem  = document.getElementById('global-filter-sem').value;
@@ -274,6 +277,11 @@ if ($conn) {
       url.searchParams.delete('academic_year');
       window.location.href = url.toString();
     }
+
+    document.addEventListener('DOMContentLoaded', function() {
+      if (yearSelect) yearSelect.addEventListener('change', syncGlobalFilter);
+      if (semSelect) semSelect.addEventListener('change', syncGlobalFilter);
+    });
   </script>
 </body>
 </html>

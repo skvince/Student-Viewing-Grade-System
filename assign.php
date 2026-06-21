@@ -512,14 +512,14 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
     <div class="global-term-container">
       <div class="filter-group">
         <label for="global-filter-year"><i class="fa-solid fa-calendar-days"></i> Academic Year:</label>
-        <select id="global-filter-year" class="global-select" onchange="syncGlobalFilter()">
+        <select id="global-filter-year" class="global-select">
           <option value="2025-2026" <?php echo $selectedYear==='2025-2026'?'selected':''; ?>>2025–2026</option>
           <option value="2026-2027" <?php echo $selectedYear==='2026-2027'?'selected':''; ?>>2026–2027</option>
         </select>
       </div>
       <div class="filter-group">
         <label for="global-filter-sem"><i class="fa-solid fa-clock"></i> Semester:</label>
-        <select id="global-filter-sem" class="global-select" onchange="syncGlobalFilter()">
+        <select id="global-filter-sem" class="global-select">
           <option value="1st Semester" <?php echo $selectedSem==='1st Semester'?'selected':''; ?>>1st Semester</option>
           <option value="2nd Semester" <?php echo $selectedSem==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
           <option value="Summer" <?php echo $selectedSem==='Summer'?'selected':''; ?>>Summer</option>
@@ -638,7 +638,7 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
                             title="Update subject">
                       <i class="fa-solid fa-pen-to-square" style="color:#059669;"></i>
                     </button>
-                    <form method="post" style="display:inline;margin:0;padding:0;" onsubmit="return confirm('Delete this subject and its related assignment/grade records?');">
+                      <form method="post" class="delete-form" data-confirm="Delete this subject and its related assignment/grade records?">
                       <input type="hidden" name="delete_subject" value="1">
                       <input type="hidden" name="subject_id" value="<?= intval($subject['id']) ?>">
                       <button type="submit" class="icon-button" title="Delete subject">
@@ -783,15 +783,7 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
                             title="Edit assignment">
                       <i class="fa-solid fa-pen-to-square" style="color:#059669;"></i>
                     </button>
-                    <form method="post" style="display:inline;margin:0;padding:0;">
-                      <input type="hidden" name="delete_assignment" value="1">
-                      <input type="hidden" name="assignment_id" value="<?= intval($a['assignment_id']) ?>">
-                      <button type="submit" class="icon-button"
-                              onclick="return confirm('Delete this assignment?');"
-                              title="Delete assignment">
-                        <i class="fa-solid fa-trash-can"></i>
-                      </button>
-                    </form>
+                      <form method="post" class="delete-form" data-confirm="Delete this assignment?">
                   </td>
                 </tr>
                 <?php endforeach; ?>
@@ -889,71 +881,83 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
     }
 
     document.addEventListener('DOMContentLoaded', function () {
-    const modal = document.getElementById('edit-modal');
-    const btnClose = document.getElementById('btn-close-modal');
+      const yearSelect = document.getElementById('global-filter-year');
+      const semSelect = document.getElementById('global-filter-sem');
+      if (yearSelect) yearSelect.addEventListener('change', syncGlobalFilter);
+      if (semSelect) semSelect.addEventListener('change', syncGlobalFilter);
 
-    document.querySelectorAll('.btn-edit-assignment').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        const data = btn.dataset;
-        document.getElementById('edit-assignment-id').value = data.id || '';
-        document.getElementById('edit-teacher').value = data.teacher || '';
-        document.getElementById('edit-subject').value = data.subject || '';
-        document.getElementById('edit-section').value = data.section || '';
-        document.getElementById('edit-school-year').value = data.year || '';
-        document.getElementById('edit-semester').value = data.semester || '';
-        modal.style.display = 'flex';
+      const modal = document.getElementById('edit-modal');
+      const btnClose = document.getElementById('btn-close-modal');
+
+      document.querySelectorAll('.btn-edit-assignment').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          const data = btn.dataset;
+          document.getElementById('edit-assignment-id').value = data.id || '';
+          document.getElementById('edit-teacher').value = data.teacher || '';
+          document.getElementById('edit-subject').value = data.subject || '';
+          document.getElementById('edit-section').value = data.section || '';
+          document.getElementById('edit-school-year').value = data.year || '';
+          document.getElementById('edit-semester').value = data.semester || '';
+          modal.style.display = 'flex';
+        });
       });
-    });
 
-    function closeModal() { modal.style.display = 'none'; }
-    btnClose.addEventListener('click', closeModal);
-    modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
+      function closeModal() { modal.style.display = 'none'; }
+      btnClose.addEventListener('click', closeModal);
+      modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
 
-    const subjectIdField = document.getElementById('subject-edit-id');
-    const subCodeInput = document.getElementById('sub-code-input');
-    const subTitleInput = document.getElementById('sub-name-input');
-    const subUnitsInput = document.getElementById('sub-units-input');
-    const subYearSelect = document.getElementById('sub-year-select');
-    const subSemSelect = document.getElementById('sub-sem-select');
-    const btnCancelSubjectEdit = document.getElementById('btn-cancel-subject-edit');
+      const subjectIdField = document.getElementById('subject-edit-id');
+      const subCodeInput = document.getElementById('sub-code-input');
+      const subTitleInput = document.getElementById('sub-name-input');
+      const subUnitsInput = document.getElementById('sub-units-input');
+      const subYearSelect = document.getElementById('sub-year-select');
+      const subSemSelect = document.getElementById('sub-sem-select');
+      const btnCancelSubjectEdit = document.getElementById('btn-cancel-subject-edit');
 
-    document.querySelectorAll('.btn-edit-subject').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        const data = btn.dataset;
-        subjectIdField.value = data.id || '';
-        subCodeInput.value = data.code || '';
-        subTitleInput.value = data.title || '';
-        subUnitsInput.value = data.units || '3';
-        subYearSelect.value = data.year || '';
-        subSemSelect.value = data.semester || '';
-        document.getElementById('sub-code-input').focus();
-        window.scrollTo({ top: document.getElementById('subject-block-container').offsetTop - 20, behavior: 'smooth' });
+      document.querySelectorAll('.btn-edit-subject').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          const data = btn.dataset;
+          subjectIdField.value = data.id || '';
+          subCodeInput.value = data.code || '';
+          subTitleInput.value = data.title || '';
+          subUnitsInput.value = data.units || '3';
+          subYearSelect.value = data.year || '';
+          subSemSelect.value = data.semester || '';
+          document.getElementById('sub-code-input').focus();
+          window.scrollTo({ top: document.getElementById('subject-block-container').offsetTop - 20, behavior: 'smooth' });
+        });
       });
-    });
 
-    function cancelSubjectEdit() {
-      subjectIdField.value = '';
-      subCodeInput.value = '';
-      subTitleInput.value = '';
-      subUnitsInput.value = '3';
-      subYearSelect.value = '';
-      subSemSelect.value = '';
-    }
-    if (btnCancelSubjectEdit) {
-      btnCancelSubjectEdit.addEventListener('click', cancelSubjectEdit);
-    }
+      function cancelSubjectEdit() {
+        subjectIdField.value = '';
+        subCodeInput.value = '';
+        subTitleInput.value = '';
+        subUnitsInput.value = '3';
+        subYearSelect.value = '';
+        subSemSelect.value = '';
+      }
+      if (btnCancelSubjectEdit) {
+        btnCancelSubjectEdit.addEventListener('click', cancelSubjectEdit);
+      }
 
-    document.querySelectorAll('.table-search-input').forEach(function (input) {
-      input.addEventListener('input', function () {
-        const q = this.value.toLowerCase();
-        const panel = this.closest('.panel-block') || this.closest('[id$="-container"]');
-        if (!panel) return;
-        panel.querySelectorAll('tbody tr').forEach(function (row) {
-          row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+      document.querySelectorAll('.table-search-input').forEach(function (input) {
+        input.addEventListener('input', function () {
+          const q = this.value.toLowerCase();
+          const panel = this.closest('.panel-block') || this.closest('[id$="-container"]');
+          if (!panel) return;
+          panel.querySelectorAll('tbody tr').forEach(function (row) {
+            row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+          });
+        });
+      });
+
+      document.querySelectorAll('.delete-form').forEach(form => {
+        form.addEventListener('submit', function(e) {
+          const msg = this.getAttribute('data-confirm') || 'Are you sure?';
+          if (!confirm(msg)) e.preventDefault();
         });
       });
     });
-  });
   </script>
 </body>
 </html>
