@@ -36,9 +36,17 @@ function make_full_name(string $first, string $middle, string $last): string {
 }
 
 function generate_password(string $lastName, ?int $id = null): string {
-    $base = preg_replace('/[^a-zA-Z0-9]/', '', $lastName);
+    // Convert spaces to underscores, as requested (e.g., "De la Cruz" => "De_la_Cruz").
+    // Keep only alphanumeric and underscores for the password base.
+    $base = str_replace(' ', '_', trim($lastName));
+    $base = preg_replace('/[^a-zA-Z0-9_]/', '', $base);
+
+    // Collapse multiple underscores to a single underscore.
+    $base = preg_replace('/_+/', '_', $base);
+
     // Trim base in case last name is empty after sanitization.
     $base = $base === '' ? 'X' : $base;
+
     if ($id !== null) {
         return (string)$id . $base;
     }

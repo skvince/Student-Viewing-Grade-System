@@ -7,10 +7,6 @@ $term = get_global_term();
 $selectedYear = $term['year'];
 $selectedSem  = $term['semester'];
 
-// Admin management tables should not depend on the global term filter.
-// They are identity records (teachers registry) and must remain visible across terms.
-// Term filtering is only applied to assignments/grades, not to CRUD registries.
-
 
 $teacherSaveError = '';
 $editingTeacherId = 0;
@@ -1009,7 +1005,7 @@ $res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name, 
                     if ($res->num_rows) {
                         while ($row = $res->fetch_assoc()) {
                             $fullName = htmlspecialchars($row['first_name'] . ' ' . ($row['middle_name'] ? $row['middle_name'] . ' ' : '') . $row['last_name']);
-                            $passwordHint = htmlspecialchars($row['id'] . $row['last_name']);
+                            $passwordHint = htmlspecialchars(generate_password($row['last_name'], (int)$row['id']));
                             echo '<tr>';
                             echo '<td>' . htmlspecialchars($row['teacher_id'] ?? ('T-' . sprintf('%03d', $row['id']))) . '</td>';
                             echo '<td>' . $fullName . '</td>';

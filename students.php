@@ -1091,7 +1091,7 @@ $studentSaveError = '';
                     if ($res->num_rows) {
                         while ($row = $res->fetch_assoc()) {
                             $fullName = htmlspecialchars($row['first_name'] . ' ' . ($row['middle_name'] ? $row['middle_name'] . ' ' : '') . $row['last_name']);
-                            $passwordHint = htmlspecialchars(strtoupper(substr($row['first_name'], 0, 1)) . $row['last_name']);
+                            $passwordHint = htmlspecialchars(strtoupper(substr($row['first_name'], 0, 1)) . str_replace(' ', '_', $row['last_name']));
                             echo '<tr>';
                             echo '<td>' . htmlspecialchars($row['student_id'] ?? ('S-' . sprintf('%03d', $row['id']))) . '</td>';
                             echo '<td>' . $fullName . '</td>';
