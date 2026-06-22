@@ -109,7 +109,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_all_grades'])) {
             }
             if (!$cfg['allowed']) continue;
 
+            // Teacher is allowed to input grades ONLY ONCE per grading period.
+            // If a grade already exists for the student+subject+term and this period
+            // is already filled, block further updates (admin-only via grade_requests).
             $existing = get_grade($sid, $subjectId, $sy, $sem);
+            $existingVal = null;
+            if ($existing) {
+                $existingVal = $existing[$period] ?? null;
+                // Treat empty string as not set
+                if ($existingVal === '') $existingVal = null;
+                // Treat 0 as a valid submitted grade (0 is within 0-100)
+            }
+
+            // If there is an active admin-approved permission grant for this
+            // grading period, allow updates even if a value already exists.
+            // Otherwise, block teacher edits once the period is already submitted.
+            $hasPermission = is_period_open_for_teacher($userId, $sy, $sem, $period);
+
+            if ($existingVal !== null && !$hasPermission) {
+                continue;
+            }
+
+
+            // Create row placeholder if not exists.
             if (!$existing) {
                 save_grade($sid, $subjectId, $userId, $sectionId, $sy, $sem, null, null, null);
             }
@@ -238,9 +260,12 @@ require_once __DIR__ . '/inc/teacher_layout.php';
                         <tbody>
                             <?php foreach ($students as $st): 
                                 $g = $gradesData[$st['id']] ?? [];
-                                $prelimDisabled = ($isPeriodOpen['prelim'] ?? false) ? '' : 'disabled';
+                                // If period is open (deadline or admin-granted permission), enable input.
+                                // Also allow inputs again after admin approval even if a value already exists.
+                                $prelimDisabled  = ($isPeriodOpen['prelim'] ?? false) ? '' : 'disabled';
                                 $midtermDisabled = ($isPeriodOpen['midterm'] ?? false) ? '' : 'disabled';
-                                $finalsDisabled = ($isPeriodOpen['finals'] ?? false) ? '' : 'disabled';
+                                $finalsDisabled  = ($isPeriodOpen['finals'] ?? false) ? '' : 'disabled';
+
                             ?>
                             <tr>
                                 <td>
