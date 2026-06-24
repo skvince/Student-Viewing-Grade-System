@@ -12,6 +12,7 @@ if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'student') {
         exit;
     }
 }
+
 $userId = intval($_SESSION['user_id']);
 $userName = '';
 $studentSectionId = 0;
@@ -35,19 +36,20 @@ $term = get_global_term();
 $filterYear = $term['year'];
 $filterSem  = $term['semester'];
 
-// Keep student term consistent with the global filter.
-$_SESSION['student_filter_year'] = $filterYear;
-$_SESSION['student_filter_sem']  = $filterSem;
+$selectedYear = $filterYear;
+$selectedSem  = $filterSem;
 
+$viewingActive = is_grade_viewing_active($selectedYear, $selectedSem);
+$studentAccess = check_student_grade_access($userId, $selectedYear, $selectedSem);
+$canViewGrades = $viewingActive || $studentAccess;
+
+revoke_expired_access_grants();
 
 $validPairs = get_student_valid_terms($userId);
 $allTerms = get_available_terms($userId, 'student');
 $defaultYearOptions = get_term_options()['years'];
 $yearOptions = $allTerms['years'] ?: $defaultYearOptions;
 $yearOptions = array_values(array_unique(array_merge($yearOptions, $defaultYearOptions)));
-
-$selectedYear = $filterYear;
-$selectedSem  = $filterSem;
 
 if (!$selectedYear) $selectedYear = $yearOptions[0] ?? '2025-2026';
 if (!$selectedSem) $selectedSem = '1st Semester';
@@ -153,7 +155,7 @@ $totalAvg = $totalUnits > 0 ? $totalWeightedAvg / $totalUnits : 0;
   .brand-info h1 { font-size:1rem; font-weight:700; letter-spacing:0.3px; }
   .brand-info p { font-size:0.8rem; opacity:0.85; margin-top:2px; }
   .user-controls { display:flex; align-items:center; gap:20px; flex-wrap:wrap; }
-  .student-profile { display:flex; align-items:center; gap:8px; font-size:0.9rem; font-weight:500; background-color:rgba(255,255,255,0.1); padding:6px 14px; border-radius:20px; }
+  .student-profile { display:flex; align-items:center; gap:8px; font-size:0.9rem; font-weight:500; text-decoration: none; color: #FFFFFF; background-color:#FFFFFF1A; padding:6px 14px; border-radius:20px; }
   .logout-btn { background-color:transparent; color:#ffffff; border:1px solid rgba(255,255,255,0.4); border-radius:6px; padding:8px 16px; font-size:0.85rem; font-weight:500; cursor:pointer; display:flex; align-items:center; gap:8px; text-decoration:none; transition:all 0.2s; }
   .logout-btn:hover { background-color:#ffffff; color:var(--primary-green); border-color:#ffffff; }
   .filter-card { background-color:var(--card-bg); border-radius:8px; border:1px solid var(--border-color); padding:20px; margin-bottom:24px; }
@@ -176,8 +178,9 @@ $totalAvg = $totalUnits > 0 ? $totalWeightedAvg / $totalUnits : 0;
   .summary-highlights-strip { background-color:var(--light-green-bg); border-radius:6px; padding:16px 24px; display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; }
   .metric-item-box p { font-size:0.75rem; color:#4b5563; font-weight:500; margin-bottom:4px; }
   .metric-item-box data { font-size:1.35rem; font-weight:700; color:var(--primary-green); display:block; }
-@media (max-width:768px) { .summary-highlights-strip { grid-template-columns:repeat(2, 1fr); } }
-   @media (max-width:480px) { .summary-highlights-strip { grid-template-columns:1fr; } }
+  @media (max-width:768px) { body { padding:10px; } .summary-highlights-strip { grid-template-columns:repeat(2, 1fr); } .header-nav { flex-direction:column; align-items:stretch; } .user-controls { width:100%; justify-content:space-between; } .form-control { width:100% !important; } }
+  @media (max-width:480px) { .summary-highlights-strip { grid-template-columns:1fr; } .filter-group-selectors { flex-direction:column; } .form-control { width:100% !important; } body { padding:10px; } }
+  @media (max-width:480px) { .summary-highlights-strip { grid-template-columns:1fr; } .filter-group-selectors { flex-direction:column; } .form-control { width:100% !important; } }
 </style>
 </head>
 <body>
@@ -188,6 +191,9 @@ $totalAvg = $totalUnits > 0 ? $totalWeightedAvg / $totalUnits : 0;
       <p>Quezon City</p>
     </div>
     <div class="user-controls">
+      <a href="student_settings.php" class="student-profile">
+        <i class="fa-solid fa-gear"></i> Settings
+      </a>
       <div class="student-profile">
         <i class="fa-solid fa-circle-user"></i>
         <span><?php echo htmlspecialchars($userName ?: ''); ?></span>
@@ -216,6 +222,15 @@ $totalAvg = $totalUnits > 0 ? $totalWeightedAvg / $totalUnits : 0;
         </div>
       </fieldset>
     </form>
+
+    <?php if (!$canViewGrades): ?>
+      <div class="alert alert-error" style="margin-bottom:24px;">
+        <i class="fa-solid fa-lock"></i> <strong>Grade viewing is currently unavailable</strong> for Academic Year <?php echo htmlspecialchars($filterYear); ?> / <?php echo htmlspecialchars($filterSem); ?>. The viewing period has not available.
+        <a href="student_requests.php" style="color:var(--primary-green);font-weight:600;text-decoration:underline;margin-left:8px;">Request Access</a>
+      </div>
+    <?php endif; ?>
+
+    <?php if ($canViewGrades): ?>
 
     <section class="grades-panel-block">
       <header class="grades-panel-header">
@@ -287,6 +302,7 @@ $totalAvg = $totalUnits > 0 ? $totalWeightedAvg / $totalUnits : 0;
         </div>
       </footer>
     </section>
+    <?php endif; ?>
    </main>
 
    <script>

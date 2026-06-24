@@ -1,6 +1,10 @@
 <?php
-
 require_once __DIR__ . '/inc/functions.php';
+$pageTitle = 'Assign Module';
+$activeNav = 'assign';
+$content = '';
+ob_start();
+
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
@@ -27,6 +31,7 @@ $gradedSubjectIds = [];
    HANDLER 1 — DELETE ASSIGNMENT
    ═══════════════════════════════════════════════════════════ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_assignment'])) {
+    if (!verify_csrf()) { header('Location: ' . $_SERVER['PHP_SELF']); exit; }
     $assignmentId = intval($_POST['assignment_id'] ?? 0);
     if ($assignmentId) {
         // deletion is term-scoped by the record itself; no extra term filter needed here
@@ -51,6 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_assignment']))
    HANDLER 2 — UPDATE SUBJECT
    ═══════════════════════════════════════════════════════════ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_subject'])) {
+    if (!verify_csrf()) { header('Location: ' . $_SERVER['PHP_SELF']); exit; }
     $editSubjectId = intval($_POST['subject_id'] ?? 0);
     $subCode  = trim($_POST['subject_code']  ?? '');
     $subTitle = trim($_POST['subject_title'] ?? '');
@@ -94,6 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_subject'])) {
    Blocked if subject is referenced by assignments or grades (FK safety).
    ═══════════════════════════════════════════════════════════ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_subject'])) {
+    if (!verify_csrf()) { header('Location: ' . $_SERVER['PHP_SELF']); exit; }
     $subjectId = intval($_POST['subject_id'] ?? 0);
     if ($subjectId) {
         if (delete_subject($subjectId)) {
@@ -110,6 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_subject'])) {
    HANDLER 4 — SAVE SUBJECT (CREATE)
    ═══════════════════════════════════════════════════════════ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_subject']) && !isset($_POST['update_subject'])) {
+    if (!verify_csrf()) { header('Location: ' . $_SERVER['PHP_SELF']); exit; }
     $subCode  = trim($_POST['subject_code']  ?? '');
     $subTitle = trim($_POST['subject_title'] ?? '');
     $subYear  = trim($_POST['sub_school_year'] ?? '');
@@ -154,6 +162,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_subject']) && !i
    FIX C: bind_param corrected from 'iissss' (wrong) → 'iiiss'.
    ═══════════════════════════════════════════════════════════ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_assignment'])) {
+    if (!verify_csrf()) { header('Location: ' . $_SERVER['PHP_SELF']); exit; }
     $teacherId  = intval($_POST['teacher_id']  ?? 0);
     $sectionId  = intval($_POST['section_id']  ?? 0);
     $subjectId  = intval($_POST['subject_id']  ?? 0);   // ← was missing
@@ -170,14 +179,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_assignment'])) {
     } else {
         $conn = db_connect();
         if ($conn) {
-            // Resolve the human-readable label for the legacy `module` column
             $moduleLabel = '';
-            $subRow = $conn->query(
-                "SELECT subject_code, title FROM subjects WHERE id = " . $subjectId . " LIMIT 1"
-            );
-            if ($subRow && ($r = $subRow->fetch_assoc())) {
-                $moduleLabel = $r['subject_code'] . ' - ' . $r['title'];
-                $subRow->free();
+            $subRow = $conn->prepare("SELECT subject_code, title FROM subjects WHERE id = ? LIMIT 1");
+            if ($subRow) {
+                $subRow->bind_param('i', $subjectId);
+                $subRow->execute();
+                $r = $subRow->get_result()->fetch_assoc();
+                $subRow->close();
+                if ($r) $moduleLabel = $r['subject_code'] . ' - ' . $r['title'];
             }
 
             // subject_id (INT NOT NULL FK) + module (VARCHAR legacy) both populated
@@ -217,6 +226,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_assignment'])) {
    HANDLER 5 — UPDATE ASSIGNMENT
    ═══════════════════════════════════════════════════════════ */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_assignment'])) {
+    if (!verify_csrf()) { header('Location: ' . $_SERVER['PHP_SELF']); exit; }
     $assignmentId = intval($_POST['assignment_id'] ?? 0);
     $teacherId    = intval($_POST['teacher_id']    ?? 0);
     $sectionId    = intval($_POST['section_id']    ?? 0);
@@ -235,12 +245,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_assignment']))
         $conn = db_connect();
         if ($conn) {
             $moduleLabel = '';
-            $subRow = $conn->query(
-                "SELECT subject_code, title FROM subjects WHERE id = " . $subjectId . " LIMIT 1"
-            );
-            if ($subRow && ($r = $subRow->fetch_assoc())) {
-                $moduleLabel = $r['subject_code'] . ' - ' . $r['title'];
-                $subRow->free();
+            $subRow = $conn->prepare("SELECT subject_code, title FROM subjects WHERE id = ? LIMIT 1");
+            if ($subRow) {
+                $subRow->bind_param('i', $subjectId);
+                $subRow->execute();
+                $r = $subRow->get_result()->fetch_assoc();
+                $subRow->close();
+                if ($r) $moduleLabel = $r['subject_code'] . ' - ' . $r['title'];
             }
 
             $st = $conn->prepare(
@@ -280,15 +291,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_assignment']))
 $conn = db_connect();
 if ($conn) {
 
-    // Escape global term early (used by Sections/Subjects queries)
-    $escapedYear = $conn->real_escape_string($selectedYear);
-    $escapedSem  = $conn->real_escape_string($selectedSem);
-
     // Teachers
-    // FIX: the `teachers` table has first_name/middle_name/last_name, not a
-    // single `name` column. The old query (`SELECT id, teacher_id, name ...`)
-    // referenced a non-existent column, so it silently failed and left the
-    // "Select Teacher" dropdown empty.
     $res = $conn->query("SELECT id, teacher_id, first_name, middle_name, last_name FROM teachers ORDER BY last_name ASC, first_name ASC");
     if ($res) {
         while ($row = $res->fetch_assoc()) {
@@ -299,25 +302,37 @@ if ($conn) {
     }
 
     // Sections — filtered by global term
-    $res = $conn->query("SELECT id, name AS section_code, name FROM sections WHERE school_year = '" . $escapedYear . "' AND semester = '" . $escapedSem . "' ORDER BY created_at DESC");
-    if ($res) {
-        while ($row = $res->fetch_assoc()) $sections[] = $row;
-        $res->free();
+    $stmt = $conn->prepare("SELECT id, name AS section_code, name FROM sections WHERE school_year = ? AND semester = ? ORDER BY created_at DESC");
+    if ($stmt) {
+        $stmt->bind_param('ss', $selectedYear, $selectedSem);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        if ($res) {
+            while ($row = $res->fetch_assoc()) $sections[] = $row;
+            $res->free();
+        }
+        $stmt->close();
     }
 
     // Subjects — loaded from DB, filtered by global term, not from JS DOM
-    $res = $conn->query(
-        "SELECT id, subject_code, title, units, school_year, semester FROM subjects WHERE school_year = '" . $escapedYear . "' AND semester = '" . $escapedSem . "' ORDER BY subject_code ASC"
+    $stmt = $conn->prepare(
+        "SELECT id, subject_code, title, units, school_year, semester FROM subjects WHERE school_year = ? AND semester = ? ORDER BY subject_code ASC"
     );
-    if ($res) {
-        while ($row = $res->fetch_assoc()) $subjects[] = $row;
-        $res->free();
+    if ($stmt) {
+        $stmt->bind_param('ss', $selectedYear, $selectedSem);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        if ($res) {
+            while ($row = $res->fetch_assoc()) $subjects[] = $row;
+            $res->free();
+        }
+        $stmt->close();
     }
 
     // Assignments — JOIN to get live subject info; filtered by global term
     // FIX: teachers table has no `name` column — build it from
     // first_name/middle_name/last_name via CONCAT, same as elsewhere.
-    $res = $conn->query(
+    $stmt = $conn->prepare(
         "SELECT
              a.id           AS assignment_id,
              a.subject_id,
@@ -331,12 +346,18 @@ if ($conn) {
          LEFT JOIN teachers  t  ON a.teacher_id  = t.id
          LEFT JOIN sections  s  ON a.section_id  = s.id
          LEFT JOIN subjects  sj ON a.subject_id  = sj.id
-         WHERE a.school_year = '" . $escapedYear . "' AND a.semester = '" . $escapedSem . "'
+         WHERE a.school_year = ? AND a.semester = ?
          ORDER BY a.created_at DESC"
     );
-    if ($res) {
-        while ($row = $res->fetch_assoc()) $assignments[] = $row;
-        $res->free();
+    if ($stmt) {
+        $stmt->bind_param('ss', $selectedYear, $selectedSem);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        if ($res) {
+            while ($row = $res->fetch_assoc()) $assignments[] = $row;
+            $res->free();
+        }
+        $stmt->close();
     }
 
     $gradeRes = $conn->query("SELECT DISTINCT subject_id FROM grades");
@@ -347,8 +368,14 @@ if ($conn) {
 
     $editSubject = null;
     if (isset($_GET['edit_subject']) ? intval($_GET['edit_subject']) : 0) {
-        $q = $conn->query("SELECT id, subject_code, title, units, school_year, semester FROM subjects WHERE id = " . intval($_GET['edit_subject']) . " LIMIT 1");
-        if ($q) { $editSubject = $q->fetch_assoc(); $q->free(); }
+        $q = $conn->prepare("SELECT id, subject_code, title, units, school_year, semester FROM subjects WHERE id = ? LIMIT 1");
+        if ($q) {
+            $editSubjectId = intval($_GET['edit_subject']);
+            $q->bind_param('i', $editSubjectId);
+            $q->execute();
+            $editSubject = $q->get_result()->fetch_assoc();
+            $q->close();
+        }
     }
 
     $conn->close();
@@ -359,187 +386,20 @@ $assignedSubjectIds = array_unique(
 );
 $gradedSubjectIds = array_unique($gradedSubjectIds);
 ?>
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CSCQC Portal</title>
-  <link rel="icon" type="image/png" href="https://cscqcph.com/images/bg/cscqcph.png" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-  <style>
-    :root {
-      --bg-color: #f1f4f2;
-      --sidebar-bg: #ffffff;
-      --text-color: #333333;
-      --text-muted: #666666;
-      --primary-green: #0e4429;
-      --primary-green-hover: #165c39;
-      --light-green-bg: #d8ebd4;
-      --active-nav-bg: #b9deb3;
-      --border-color: #e5e7eb;
-      --card-bg: #ffffff;
-      --danger-red: #dc2626;
-      --edit-blue: #059669;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Inter", sans-serif; }
-    body { background-color: var(--bg-color); color: var(--text-color); display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
 
-    /* Mobile header */
-    .mobile-header { display: none; background-color: var(--sidebar-bg); border-bottom: 1px solid var(--border-color); padding: 12px 20px; align-items: center; justify-content: space-between; position: fixed; top: 0; left: 0; right: 0; z-index: 100; height: 60px; }
-    .menu-toggle-btn { font-size: 1.3rem; color: var(--primary-green); cursor: pointer; padding: 4px 8px; }
-    #sidebar-toggle { display: none; }
+    <div class="tab-content" style="display: block;">
+      <h1 class="view-title">Assign Module</h1>
+      <p class="view-subtitle">Manage structural modules and assign entities</p>
 
-    /* Sidebar */
-    .sidebar { background-color: var(--sidebar-bg); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; justify-content: space-between; padding: 20px 0; height: 100vh; position: sticky; top: 0; z-index: 90; }
-    .brand { display: flex; align-items: center; padding: 0 24px; margin-bottom: 30px; }
-    .brand i { font-size: 1.8rem; color: var(--primary-green); margin-right: 12px; }
-    .brand-text h2 { font-size: 1rem; font-weight: 700; color: #111827; }
-    .brand-text p { font-size: 0.75rem; color: var(--text-muted); }
-    .nav-menu { list-style: none; flex-grow: 1; }
-    input[type="radio"].tab-switch { display: none; }
-    .nav-menu a { display: flex; align-items: center; padding: 12px 24px; color: var(--text-muted); font-size: 0.9rem; font-weight: 500; cursor: pointer; transition: all 0.2s; margin-bottom: 4px; border-left: 4px solid transparent; text-decoration: none; }
-    .nav-menu a i { margin-right: 12px; font-size: 1.1rem; width: 20px; text-align: center; }
-    .nav-menu a:hover { background-color: #b9deb3; color: var(--primary-green); }
-    .nav-menu a.active { background-color: var(--active-nav-bg); color: var(--primary-green); font-weight: 600; }
-    .logout-btn { margin: 0 20px; padding: 12px; background-color: var(--primary-green); color: white; border: none; border-radius: 6px; font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; font-size: 0.9rem; transition: background 0.2s; }
-    .logout-btn:hover { background-color: var(--primary-green-hover); }
+      <div class="panel-block" id="subject-block-container">
+        <div class="block-header">
+          <h2 class="block-title">Create / Manage Subjects</h2>
+        </div>
 
-    /* Main */
-    .main-content { padding: 40px; min-width: 0; }
-    .global-term-container { display: flex; align-items: center; gap: 24px; background-color: #0c3e21; padding: 16px 24px; border-radius: 12px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,.1); flex-wrap: wrap; }
-    .filter-group { display: flex; align-items: center; gap: 12px; }
-    .global-term-container label { color: #fff; font-size: .9rem; font-weight: 700; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
-    .global-select { padding: 8px 14px; border-radius: 6px; border: 1px solid transparent; font-size: .875rem; background-color: #fff; color: #1f2937; font-weight: 500; cursor: pointer; outline: none; min-width: 140px; transition: border-color .2s, box-shadow .2s; }
-    .global-select:focus { border-color: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.2); }
+        <?php if ($subjectError): ?><div class="alert-error"><i class="fa-solid fa-triangle-exclamation"></i> <?= htmlspecialchars($subjectError) ?></div><?php endif; ?>
 
-    /* Typography */
-    .view-title { font-size: 1.25rem; color: var(--primary-green); font-weight: 600; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .5px; }
-    .view-subtitle { font-size: .85rem; color: var(--text-muted); margin-bottom: 24px; }
-
-    /* Panels */
-    .panel-block { background-color: var(--card-bg); border-radius: 8px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
-    .block-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 16px; flex-wrap: wrap; }
-    .block-title { font-size: 1rem; color: var(--primary-green); font-weight: 600; }
-
-    /* Alerts */
-    .alert-error   { margin: 0 0 16px; padding: 10px 14px; background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 8px; font-size: .875rem; }
-    .alert-success { margin: 0 0 16px; padding: 10px 14px; background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; border-radius: 8px; font-size: .875rem; }
-
-    /* Tables */
-    .table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border-color); border-radius: 6px; background-color: #fff; }
-    table { width: 100%; border-collapse: collapse; text-align: left; font-size: .85rem; min-width: 650px; }
-    th { color: #4b5563; background-color: #f9fafb; font-weight: 600; text-transform: uppercase; font-size: .75rem; padding: 12px 16px; border-bottom: 1px solid var(--border-color); }
-    td { padding: 14px 16px; color: #1f2937; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
-    th:last-child, .actions-cell { text-align: center; width: 100px; min-width: 100px; }
-    .actions-cell { white-space: nowrap; }
-    .icon-button { background: transparent; border: none; padding: 4px 8px; color: inherit; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; transition: transform .2s; }
-    .icon-button:hover { transform: scale(1.15); }
-    .fa-trash-can { color: #ef4444; }
-
-    /* Search */
-    .search-bar-wrap { display: flex; justify-content: flex-end; margin-bottom: 10px; }
-    .search-bar-inner { position: relative; min-width: 250px; }
-    .search-bar-inner i { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #aaa; pointer-events: none; }
-    .table-search-input { width: 100%; padding: 6px 12px 6px 32px; border-radius: 4px; border: 1px solid #ccc; font-size: .85rem; }
-
-    /* Forms */
-    .form-group { margin: 10px 5px 20px; }
-    .form-group label { display: block; font-size: .85rem; color: var(--text-muted); margin-bottom: 8px; font-weight: 500; }
-    .form-control { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; background-color: #fff; font-size: .9rem; color: #1f2937; outline: none; }
-    select.form-control { appearance: none; background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234b5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e"); background-repeat: no-repeat; background-position: right 12px center; background-size: 16px; padding-right: 36px; }
-    .form-control:focus { border-color: var(--primary-green); box-shadow: 0 0 0 3px rgba(14,68,41,.15); }
-    .form-buttons-row { display: flex; gap: 12px; align-items: center; }
-    .btn-submit { background-color: var(--primary-green); color: white; border: none; margin-bottom: 8px; margin-left: 7px; padding: 10px 20px; border-radius: 6px; font-size: .9rem; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 6px; }
-    .btn-submit:hover { background-color: var(--primary-green-hover); }
-    .btn-cancel { background-color: #e5e7eb; color: #374151; border: none; padding: 10px 20px; border-radius: 6px; font-size: .9rem; font-weight: 500; cursor: pointer; }
-    .grid-2col { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
-    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; align-items: center; justify-content: center; }
-    .modal-content { background: #fff; padding: 24px; border-radius: 8px; width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto; }
-
-    /* Responsive */
-    @media (max-width: 1024px) {
-      body { grid-template-columns: 1fr; padding-top: 60px; }
-      .mobile-header { display: flex; }
-      .sidebar { position: fixed; top: 60px; left: 0; bottom: 0; transform: translateX(-100%); width: 260px; height: calc(100vh - 60px); box-shadow: 4px 0 10px rgba(0,0,0,.1); transition: transform .3s ease; }
-      #sidebar-toggle:checked ~ .sidebar { transform: translateX(0); }
-      .main-content { padding: 20px; }
-    }
-    @media (max-width: 768px) {
-      .grid-2col { grid-template-columns: 1fr; gap: 0; }
-    }
-    @media (max-width: 480px) {
-      .panel-block { padding: 16px; }
-    }
-  </style>
-</head>
-<body>
-  <input type="checkbox" id="sidebar-toggle" />
-
-  <header class="mobile-header">
-    <div class="brand" style="padding:0;margin:0;">
-      <img src="https://cscqcph.com/images/bg/cscqcph.png" alt="CSCQC" style="width:32px;height:32px;object-fit:contain;font-size:1.5rem;color:var(--primary-green);margin-right:10px;">
-      <div class="brand-text"><h2 style="font-size:.9rem;">Admin Panel</h2></div>
-    </div>
-    <label for="sidebar-toggle" class="menu-toggle-btn">
-      <i class="fa-solid fa-bars"></i>
-    </label>
-  </header>
-
-  <aside class="sidebar">
-    <div>
-      <div class="brand">
-        <img src="https://cscqcph.com/images/bg/cscqcph.png" alt="CSCQC" style="width:32px;height:32px;object-fit:contain;margin-right:12px;">
-        <div class="brand-text"><h2>Admin Panel</h2><p>CSCQC</p></div>
-      </div>
-      <nav class="nav-menu" aria-label="Main Navigation">
-        <a href="admin.php">   <i class="fa-solid fa-table-cells-large"></i> Dashboard</a>
-        <a href="teachers.php"><i class="fa-solid fa-users"></i> Teachers</a>
-        <a href="section.php"> <i class="fa-solid fa-book-open"></i> Section &amp; Dept</a>
-        <a href="students.php"><i class="fa-solid fa-user-graduate"></i> Students</a>
-        <a href="assign.php" class="active"><i class="fa-solid fa-gear"></i> Assign Module</a>
-        <a href="deadline_manager.php"><i class="fa-solid fa-calendar-check"></i> Grade Deadlines</a>
-        <a href="grade_requests.php"><i class="fa-solid fa-clipboard-check"></i> Grade Requests</a>
-      </nav>
-    </div>
-    <a href="login.php?logout=1" class="logout-btn"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
-  </aside>
-
-  <div class="main-content">
-
-    <!-- Global term filter bar -->
-    <div class="global-term-container">
-      <div class="filter-group">
-        <label for="global-filter-year"><i class="fa-solid fa-calendar-days"></i> Academic Year:</label>
-        <select id="global-filter-year" class="global-select">
-          <option value="2025-2026" <?php echo $selectedYear==='2025-2026'?'selected':''; ?>>2025–2026</option>
-          <option value="2026-2027" <?php echo $selectedYear==='2026-2027'?'selected':''; ?>>2026–2027</option>
-        </select>
-      </div>
-      <div class="filter-group">
-        <label for="global-filter-sem"><i class="fa-solid fa-clock"></i> Semester:</label>
-        <select id="global-filter-sem" class="global-select">
-          <option value="1st Semester" <?php echo $selectedSem==='1st Semester'?'selected':''; ?>>1st Semester</option>
-          <option value="2nd Semester" <?php echo $selectedSem==='2nd Semester'?'selected':''; ?>>2nd Semester</option>
-          <option value="Summer" <?php echo $selectedSem==='Summer'?'selected':''; ?>>Summer</option>
-        </select>
-      </div>
-    </div>
-
-    <h1 class="view-title">Assign Module</h1>
-    <p class="view-subtitle">Manage structural modules and assign entities</p>
-
-    <div class="panel-block" id="subject-block-container">
-      <div class="block-header">
-        <h2 class="block-title">Create / Manage Subjects</h2>
-      </div>
-
-      <?php if ($subjectError): ?>
-        <div class="alert-error"><i class="fa-solid fa-triangle-exclamation"></i> <?= htmlspecialchars($subjectError) ?></div>
-      <?php endif; ?>
-
-      <form method="post" action="">
+        <form method="post" action="">
+        <?php echo csrf_field(); ?>
         <input type="hidden" name="subject_id" id="subject-edit-id" value="<?= intval($editSubjectId) ?>">
         <div class="grid-2col">
           <div class="form-group">
@@ -596,13 +456,13 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
 
       <!-- Subject table -->
       <div style="margin-top:20px;">
-      <div class="table-responsive">
-        <div class="search-bar-wrap">
-          <div class="search-bar-inner">
-            <i class="fa-solid fa-magnifying-glass"></i>
-            <input type="text" class="table-search-input" placeholder="Search subjects..." />
-          </div>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+        <div class="search-wrapper">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input type="text" class="search-input" placeholder="Search subjects..." />
         </div>
+      </div>
+      <div class="table-responsive">
         <table id="subject-registry-table">
           <thead>
             <tr>
@@ -639,6 +499,7 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
                       <i class="fa-solid fa-pen-to-square" style="color:#059669;"></i>
                     </button>
                       <form method="post" class="delete-form" data-confirm="Delete this subject and its related assignment/grade records?">
+                      <?php echo csrf_field(); ?>
                       <input type="hidden" name="delete_subject" value="1">
                       <input type="hidden" name="subject_id" value="<?= intval($subject['id']) ?>">
                       <button type="submit" class="icon-button" title="Delete subject">
@@ -646,8 +507,8 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
                       </button>
                     </form>
                   </td>
-                </tr>
-                <?php endforeach; ?>
+</tr>
+            <?php endforeach; ?>
               <?php else: ?>
                 <tr><td colspan="5" style="text-align:center;color:#6b7280;padding:18px;">No subjects found. Add one above.</td></tr>
               <?php endif; ?>
@@ -673,6 +534,7 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
       <?php endif; ?>
 
       <form method="post" action="">
+        <?php echo csrf_field(); ?>
         <fieldset style="border:none;">
           <div class="grid-2col">
             <div class="form-group">
@@ -744,13 +606,13 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
 
       <!-- Assignment table -->
       <div style="margin-top:30px;">
-        <div class="search-bar-wrap">
-          <div class="search-bar-inner">
-            <i class="fa-solid fa-magnifying-glass"></i>
-            <input type="text" class="table-search-input" placeholder="Search assignments..." />
-          </div>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+        <div class="search-wrapper">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input type="text" class="search-input" placeholder="Search assignments..." />
         </div>
-        <div class="table-responsive">
+      </div>
+      <div class="table-responsive">
           <table id="assignment-connections-table">
             <thead>
               <tr>
@@ -783,15 +645,16 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
                              title="Edit assignment">
                        <i class="fa-solid fa-pen-to-square" style="color:#059669;"></i>
                      </button>
-                     <form method="post" class="delete-form" data-confirm="Delete this assignment?">
-                       <input type="hidden" name="delete_assignment" value="1">
+                      <form method="post" class="delete-form" data-confirm="Delete this assignment?">
+                        <?php echo csrf_field(); ?>
+                        <input type="hidden" name="delete_assignment" value="1">
                        <input type="hidden" name="assignment_id" value="<?= intval($a['assignment_id']) ?>">
                        <button type="submit" class="icon-button" title="Delete assignment">
                          <i class="fa-solid fa-trash-can"></i>
                        </button>
                      </form>
                    </td>
-                </tr>
+</tr>
                 <?php endforeach; ?>
               <?php else: ?>
                 <tr><td colspan="6" style="text-align:center;color:#6b7280;padding:18px;">No assignments yet.</td></tr>
@@ -801,12 +664,14 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
         </div>
       </div>
     </div><!-- /assign panel -->
+    </div>
 
     <!-- Edit Assignment Modal -->
-    <div class="modal-overlay" id="edit-modal">
-      <div class="modal-content">
+    <div class="modal-backdrop" id="edit-modal">
+      <div class="modal-card">
         <h3 class="block-title" style="margin-bottom:16px;">Edit Assignment</h3>
       <form method="post" action="" id="subject-form-anchor">
+          <?php echo csrf_field(); ?>
           <input type="hidden" name="update_assignment" value="1">
           <input type="hidden" name="assignment_id" id="edit-assignment-id">
           <div class="grid-2col">
@@ -867,11 +732,9 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
             <button type="submit" class="btn-submit"><i class="fa-solid fa-floppy-disk"></i> Save Changes</button>
             <button type="button" class="btn-cancel" id="btn-close-modal">Cancel</button>
           </div>
-        </form>
+</form>
       </div>
     </div>
-
-  </div><!-- /.main-content -->
 
   <script>
     function syncGlobalFilter() {
@@ -946,7 +809,7 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
         btnCancelSubjectEdit.addEventListener('click', cancelSubjectEdit);
       }
 
-      document.querySelectorAll('.table-search-input').forEach(function (input) {
+      document.querySelectorAll('.search-input').forEach(function (input) {
         input.addEventListener('input', function () {
           const q = this.value.toLowerCase();
           const panel = this.closest('.panel-block') || this.closest('[id$="-container"]');
@@ -965,5 +828,8 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
       });
     });
   </script>
-</body>
-</html>
+
+<?php
+$content = ob_get_clean();
+require_once __DIR__ . '/inc/app_layout.php';
+?>

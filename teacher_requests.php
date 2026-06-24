@@ -15,13 +15,15 @@ if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'teacher') {
 
 $userId = intval($_SESSION['user_id']);
 $userName = '';
+$activeSectionId = 0;
+$activeSubjectId = 0;
+$sections = [];
+$requests = [];
+$saveError = '';
 
 $term = get_global_term();
 $schoolYear = $term['year'];
 $semester   = $term['semester'];
-
-$_SESSION['teacher_sy']  = $schoolYear;
-$_SESSION['teacher_sem'] = $semester;
 
 $conn = db_connect();
 if ($conn) {
@@ -35,61 +37,35 @@ if ($conn) {
         }
         $stmt->close();
     }
-    $conn->close();
-}
 
-// Build allowed sections+subjects for this teacher and current global term.
-$assignments = get_teacher_assignments($userId, $schoolYear, $semester);
-$sections = [];
-foreach ($assignments as $a) {
-    $key = $a['section_id'];
-    if (!isset($sections[$key])) {
-        $sections[$key] = [
-            'id' => (int)$a['section_id'],
-            'code' => $a['section_code'] ?? '',
-            'name' => $a['section_name'] ?? '',
-            'department' => $a['department'] ?? '',
-            'subjects' => []
+    $assignments = get_teacher_assignments($userId, $schoolYear, $semester);
+    foreach ($assignments as $a) {
+        $key = $a['section_id'];
+        if (!isset($sections[$key])) {
+            $sections[$key] = [
+                'id' => (int)$a['section_id'],
+                'code' => $a['section_code'] ?? '',
+                'name' => $a['section_name'] ?? '',
+                'department' => $a['department'] ?? '',
+                'subjects' => []
+            ];
+        }
+        $sections[$key]['subjects'][] = [
+            'assignment_id' => $a['assignment_id'] ?? null,
+            'subject_id' => (int)$a['subject_id'],
+            'code' => $a['subject_code'] ?? '',
+            'title' => $a['subject_title'] ?? '',
+            'units' => $a['units'] ?? 3,
         ];
     }
 
-    $sections[$key]['subjects'][] = [
-        'assignment_id' => $a['assignment_id'] ?? null,
-        'subject_id' => (int)$a['subject_id'],
-        'code' => $a['subject_code'] ?? '',
-        'title' => $a['subject_title'] ?? '',
-        'units' => $a['units'] ?? 3,
-    ];
-}
-
-// Default active section/subject for dropdown selection (prevents undefined vars).
-$activeSectionId = 0;
-$activeSubjectId = 0;
-if (!empty($sections)) {
-    $activeSectionId = (int)array_key_first($sections);
-    if (!empty($sections[$activeSectionId]['subjects'])) {
-        $activeSubjectId = (int)$sections[$activeSectionId]['subjects'][0]['subject_id'];
-    }
-}
-
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $reqSectionId = intval($_POST['request_section_id'] ?? 0);
-    $reqSubjectId = intval($_POST['request_subject_id'] ?? 0);
-    $reqPeriod = strtolower(trim($_POST['request_period'] ?? ''));
-    $reqReason = trim($_POST['request_reason'] ?? '');
-
-    if (in_array($reqPeriod, ['prelim', 'midterm', 'finals'], true) && $reqReason !== '' && $reqSectionId && $reqSubjectId) {
-        save_grade_change_request($userId, $reqSectionId, $reqSubjectId, $schoolYear, $semester, $reqPeriod, $reqReason);
+    if (!empty($sections)) {
+        $activeSectionId = (int)array_key_first($sections);
+        if (!empty($sections[$activeSectionId]['subjects'])) {
+            $activeSubjectId = (int)$sections[$activeSectionId]['subjects'][0]['subject_id'];
+        }
     }
 
-    header('Location: ' . $_SERVER['PHP_SELF'] . '?global_year=' . urlencode($schoolYear) . '&global_sem=' . urlencode($semester));
-    exit;
-}
-
-$requests = [];
-$conn = db_connect();
-if ($conn) {
     $stmt = $conn->prepare("SELECT cr.id, cr.section_id, cr.subject_id, cr.school_year, cr.semester, cr.grading_period, cr.reason, cr.status, cr.admin_response, cr.expires_at, cr.created_at,
             s.name AS section_name,
             sj.subject_code, sj.title AS subject_title
@@ -108,20 +84,53 @@ if ($conn) {
     $conn->close();
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!verify_csrf()) { header('Location: ' . $_SERVER['PHP_SELF'] . '?global_year=' . urlencode($schoolYear) . '&global_sem=' . urlencode($semester)); exit; }
+    $reqSectionId = intval($_POST['request_section_id'] ?? 0);
+    $reqSubjectId = intval($_POST['request_subject_id'] ?? 0);
+    $reqPeriod = strtolower(trim($_POST['request_period'] ?? ''));
+    $reqReason = trim($_POST['request_reason'] ?? '');
+
+    if (in_array($reqPeriod, ['prelim', 'midterm', 'finals'], true) && $reqReason !== '' && $reqSectionId && $reqSubjectId) {
+        $conn2 = db_connect();
+        if ($conn2) {
+            $ok = save_grade_change_request($userId, $reqSectionId, $reqSubjectId, $schoolYear, $semester, $reqPeriod, $reqReason);
+            if (!$ok) $saveError = 'Failed to submit request.';
+            $conn2->close();
+        }
+    } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $saveError = 'Please fill in all required fields.';
+    }
+
+    if (!$saveError) {
+        header('Location: ' . $_SERVER['PHP_SELF'] . '?global_year=' . urlencode($schoolYear) . '&global_sem=' . urlencode($semester));
+        exit;
+    }
+}
+
 $activeNav = 'requests';
-require_once __DIR__ . '/inc/teacher_layout.php';
+ob_start();
 ?>
 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
     <div>
-        <h1 class="view-title">My Requests</h1>
-        <p class="view-subtitle">Track your grade change requests</p>
+        <h1 class="view-title" style="margin-bottom:4px;">My Requests</h1>
+        <p class="view-subtitle" style="margin-bottom:0;">Track your grade change requests</p>
     </div>
-    <button type="button" class="btn btn-request" id="btn-new-request"><i class="fa-solid fa-plus"></i> New Request</button>
+    <button type="button" class="btn btn-add" id="btn-new-request"><i class="fa-solid fa-plus"></i> New Request</button>
 </div>
 
 <div class="panel-block">
+    <div class="block-header">
+        <h2 class="block-title">Requests Registry</h2>
+        <div class="header-actions">
+            <div class="search-wrapper">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" class="search-input" placeholder="Search requests..." id="request-search-input" />
+            </div>
+        </div>
+    </div>
     <div class="table-responsive">
-        <table>
+        <table id="requests-table">
             <thead>
                 <tr><th>ID</th><th>Section</th><th>Subject</th><th>Period</th><th>Reason</th><th>Status</th><th>Admin Response</th><th>Submitted</th></tr>
             </thead>
@@ -148,10 +157,17 @@ require_once __DIR__ . '/inc/teacher_layout.php';
 <div id="request-modal-backdrop" class="modal-backdrop">
     <div class="modal-card">
         <button type="button" class="modal-close" id="btn-close-request-modal"><i class="fa-solid fa-xmark"></i></button>
-        <h3 style="margin-bottom:16px;">Request Permission</h3>
+        <div class="request-form-header">
+            <h3 id="form-title">New Grade Change Request</h3>
+            <p id="form-subtitle">Fill in the details below to submit your request.</p>
+        </div>
         <form method="post" id="request-form">
+            <?php echo csrf_field(); ?>
+            <?php if ($saveError): ?>
+                <p style="color:#b91c1c; margin-bottom: 16px;"><?php echo htmlspecialchars($saveError); ?></p>
+            <?php endif; ?>
             <div class="form-group">
-                <label>Grading Period</label>
+                <label for="request-period">Grading Period</label>
                 <select name="request_period" id="request-period" class="form-control" required>
                     <option value="prelim">Prelim</option>
                     <option value="midterm">Midterm</option>
@@ -159,31 +175,28 @@ require_once __DIR__ . '/inc/teacher_layout.php';
                 </select>
             </div>
             <div class="form-group">
-                <label>Section</label>
-                <select name="request_section_id" class="form-control" required>
-                    <option value="">Select section</option>
+                <label for="request-section">Section</label>
+                <select name="request_section_id" id="request-section" class="form-control" required>
+                    <option value="">Select section...</option>
                     <?php foreach ($sections as $sec): ?>
                         <option value="<?php echo (int)$sec['id']; ?>" <?php echo $activeSectionId===(int)$sec['id']?'selected':''; ?>><?php echo htmlspecialchars($sec['code'] ?? $sec['name']); ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
             <div class="form-group">
-                <label>Subject</label>
-
-                <select name="request_subject_id" class="form-control" required>
+                <label for="request-subject">Subject</label>
+                <select name="request_subject_id" id="request-subject" class="form-control" required>
                     <?php if (!empty($sections) && isset($sections[$activeSectionId]['subjects'])): foreach ($sections[$activeSectionId]['subjects'] as $subj): ?>
-                        
                         <option value="<?php echo (int)$subj['subject_id']; ?>" <?php echo $activeSubjectId===(int)$subj['subject_id']?'selected':''; ?>><?php echo htmlspecialchars($subj['code'] . ' - ' . $subj['title']); ?></option>
                     <?php endforeach; endif; ?>
-
                 </select>
             </div>
             <div class="form-group">
-                <label>Reason for Request</label>
-                <textarea name="request_reason" class="form-control" rows="4" required placeholder="Please explain why you need access..."></textarea>
+                <label for="request-reason">Reason for Request</label>
+                <textarea name="request_reason" id="request-reason" class="form-control" rows="4" required placeholder="Please explain why you need access..."></textarea>
             </div>
-            <div style="display:flex; gap:12px; align-items:center;">
-                <button type="submit" name="request_permission" class="btn btn-submit"><i class="fa-solid fa-paper-plane"></i> Submit Request</button>
+            <div class="form-buttons-row card-action-row">
+                <button type="submit" class="btn btn-submit"><i class="fa-solid fa-paper-plane"></i> Submit Request</button>
                 <button type="button" class="btn-cancel" id="btn-cancel-request">Cancel</button>
             </div>
         </form>
@@ -195,17 +208,14 @@ require_once __DIR__ . '/inc/teacher_layout.php';
     const requestModalBackdrop = document.getElementById('request-modal-backdrop');
     const btnCloseRequestModal = document.getElementById('btn-close-request-modal');
     const btnCancelRequest = document.getElementById('btn-cancel-request');
+    const requestSearchInput = document.getElementById('request-search-input');
 
     function openRequestModal() {
+        if (!requestModalBackdrop) return;
         requestModalBackdrop.style.display = 'flex';
-
         const sectionSelect = document.querySelector('select[name="request_section_id"]');
         const subjectSelect = document.querySelector('select[name="request_subject_id"]');
-
-        if (sectionSelect) {
-            sectionSelect.value = '';
-        }
-
+        if (sectionSelect) sectionSelect.value = '';
         if (subjectSelect) {
             subjectSelect.innerHTML = '<option value="">Select subject</option>';
             subjectSelect.value = '';
@@ -213,8 +223,15 @@ require_once __DIR__ . '/inc/teacher_layout.php';
     }
 
     function closeRequestModal() {
+        if (!requestModalBackdrop) return;
         requestModalBackdrop.style.display = 'none';
-        document.getElementById('request-form').querySelectorAll('textarea, input').forEach(function(el){ if(el.tagName && el.tagName.toLowerCase()==='textarea') el.value=''; if(el.type==='text') el.value='';});
+        const form = document.getElementById('request-form');
+        if (form) {
+            form.querySelectorAll('input, textarea').forEach(function(el) {
+                if (el.tagName.toLowerCase() === 'textarea') el.value = '';
+                else if (el.type === 'text') el.value = '';
+            });
+        }
     }
 
     const TEACHER_SECTIONS = <?php echo json_encode(array_map(function ($sec) {
@@ -234,7 +251,6 @@ require_once __DIR__ . '/inc/teacher_layout.php';
             : [];
 
         const currentSubject = parseInt(subjectSelect.value || '0', 10);
-
         subjectSelect.innerHTML = '';
 
         subjects.forEach(function (s, idx) {
@@ -250,6 +266,24 @@ require_once __DIR__ . '/inc/teacher_layout.php';
         } else if (subjects.length === 0) {
             subjectSelect.value = '';
         }
+    }
+
+    function filterRequests() {
+        if (!requestSearchInput) return;
+        const query = requestSearchInput.value.toLowerCase();
+        const tableBody = document.querySelector('#requests-table tbody');
+        if (!tableBody) return;
+        const rows = tableBody.querySelectorAll('tr');
+        let visibleCount = 0;
+        rows.forEach(function(row) {
+            const text = row.textContent.toLowerCase();
+            if (text.includes(query)) {
+                row.style.display = '';
+                visibleCount++;
+            } else {
+                row.style.display = 'none';
+            }
+        });
     }
 
     document.addEventListener('DOMContentLoaded', function () {
@@ -273,7 +307,14 @@ require_once __DIR__ . '/inc/teacher_layout.php';
             sectionSelect.addEventListener('change', updateRequestSubjects);
             updateRequestSubjects();
         }
+
+        if (requestSearchInput) {
+            requestSearchInput.addEventListener('input', filterRequests);
+        }
     });
 </script>
-</body>
-</html>
+<?php
+$requestsContent = ob_get_clean();
+$activeNav = 'requests';
+require_once __DIR__ . '/inc/teacher_layout.php';
+?>
