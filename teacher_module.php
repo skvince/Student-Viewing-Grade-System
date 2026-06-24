@@ -247,7 +247,7 @@ ob_start();
                 <input type="hidden" name="school_year" value="<?php echo htmlspecialchars($schoolYear); ?>">
                 <input type="hidden" name="semester" value="<?php echo htmlspecialchars($semester); ?>">
                 <input type="hidden" name="save_all_grades" value="1">
-<<<<<<< HEAD
+
                 <div class="grades-grid">
                     <div class="grade-row header">
                         <div>Student ID</div>
@@ -274,7 +274,7 @@ ob_start();
                         <div><span class="gwa-badge">-</span></div>
                     </div>
                     <?php endforeach; ?>
-=======
+
                 <div class="table-responsive">
                     <table class="grade-table">
                         <thead>
@@ -313,7 +313,7 @@ ob_start();
                             <?php endforeach; ?>
                         </tbody>
                     </table>
->>>>>>> 3b6f20fcc5342bc3e2d7bf193e6c1f9123790c85
+
                 </div>
                 <?php if ($anyOpen): ?>
                     <div class="form-actions" style="margin-top:16px;">

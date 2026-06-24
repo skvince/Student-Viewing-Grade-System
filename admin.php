@@ -21,7 +21,7 @@ $totalTeachers = 0;
 $totalStudents = 0;
 $totalAssignments = 0;
 if ($conn) {
-<<<<<<< HEAD
+
     $stmt = $conn->prepare("SELECT COUNT(*) AS count FROM teachers");
     if ($stmt) { $stmt->execute(); $res = $stmt->get_result(); $totalTeachers = (int)($res->fetch_assoc()['count'] ?? 0); $stmt->close(); }
 
@@ -35,7 +35,7 @@ if ($conn) {
         $res = $stmt->get_result();
         $totalAssignments = (int)($res->fetch_assoc()['count'] ?? 0);
         $stmt->close();
-=======
+
     $totalTeachers = (int) $conn->query("SELECT COUNT(*) AS count FROM teachers")->fetch_assoc()['count'];
     $totalStudents = (int) $conn->query("SELECT COUNT(*) AS count FROM students")->fetch_assoc()['count'];
     $totalAssignments = (int) $conn->query("SELECT COUNT(*) AS count FROM assignments WHERE school_year = '" . $conn->real_escape_string($selectedYear) . "' AND semester = '" . $conn->real_escape_string($selectedSem) . "'")->fetch_assoc()['count'];
@@ -55,7 +55,7 @@ if ($conn) {
             $recentAssignments[] = $row;
         }
         $res->free();
->>>>>>> 3b6f20fcc5342bc3e2d7bf193e6c1f9123790c85
+
     }
     $conn->close();
 }

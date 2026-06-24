@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+﻿
 <?php
 require_once __DIR__ . '/inc/functions.php';
 $pageTitle = 'Students Management';
@@ -21,7 +21,7 @@ $studentSaveError = '';
     $departments = [];
     $editingStudentId = 0;
     $editingStudentData = [];
-=======
+
     <?php ob_start(); require_once __DIR__ . '/inc/functions.php';
   if (session_status() !== PHP_SESSION_ACTIVE) {
       session_start();
@@ -39,11 +39,11 @@ $studentSaveError = '';
       $departments = [];
       $editingStudentId = 0;
       $editingStudentData = [];
->>>>>>> 3b6f20fcc5342bc3e2d7bf193e6c1f9123790c85
+
 
       $departments = get_departments();
 
-<<<<<<< HEAD
+
       $conn = db_connect();
       if ($conn) {
         $stmt = $conn->prepare("SELECT id, name AS section_code, name FROM sections WHERE school_year = ? AND semester = ? ORDER BY name ASC");
@@ -130,8 +130,6 @@ $studentSaveError = '';
 
     if (isset($_GET['edit_student'])) {
       $editingStudentId = intval($_GET['edit_student']);
-=======
->>>>>>> 3b6f20fcc5342bc3e2d7bf193e6c1f9123790c85
       $conn = db_connect();
       if ($conn) {
         $escapedYear = $conn->real_escape_string($selectedYear);
@@ -307,7 +305,7 @@ $studentSaveError = '';
             font-family: "Inter", sans-serif;
           }
 
-<<<<<<< HEAD
+
     $formFirstName = $editingStudentData['first_name'] ?? $submittedFirstName ?? '';
     $formMiddleName = $editingStudentData['middle_name'] ?? $submittedMiddleName ?? '';
     $formLastName = $editingStudentData['last_name'] ?? $submittedLastName ?? '';
@@ -319,7 +317,7 @@ $studentSaveError = '';
 
 ?>
 
-=======
+
           body {
             background-color: var(--bg-color);
             color: var(--text-color);
@@ -873,7 +871,7 @@ $studentSaveError = '';
           .student-form-header {
             margin-bottom: 20px;
           }
->>>>>>> 3b6f20fcc5342bc3e2d7bf193e6c1f9123790c85
+
 
           .student-form-header h3 {
             margin: 0;
@@ -888,7 +886,7 @@ $studentSaveError = '';
             font-size: 0.95rem;
           }
 
-<<<<<<< HEAD
+
           <div class="panel-block">
             <div class="block-header" style="
                   display: flex;
@@ -965,11 +963,11 @@ $studentSaveError = '';
                      <label for="section_id">Section</label>
                      <select name="section_id" id="section_id" class="form-control" required>
                        <option value="" selected>Select section...</option>
-=======
+
           .student-form-card .form-group {
             margin-bottom: 18px;
           }
->>>>>>> 3b6f20fcc5342bc3e2d7bf193e6c1f9123790c85
+
 
           .student-form-card .form-control {
             border-radius: 12px;
@@ -983,7 +981,7 @@ $studentSaveError = '';
             box-shadow: 0 0 0 3px rgba(14, 68, 41, 0.12);
           }
 
-<<<<<<< HEAD
+
                      </select>
                    </div>
                    <div class="form-buttons-row card-action-row">
@@ -1042,7 +1040,7 @@ $studentSaveError = '';
                 $conn->close();
             } else {
                 echo '<tr><td colspan="6" style="text-align:center;color:#6b7280;padding:18px;">Database unavailable.</td></tr>';
-=======
+
           .card-action-row {
             display: flex;
             justify-content: flex-start;
@@ -1113,7 +1111,7 @@ $studentSaveError = '';
             body {
               grid-template-columns: 1fr;
               padding-top: 60px;
->>>>>>> 3b6f20fcc5342bc3e2d7bf193e6c1f9123790c85
+
             }
 
             .mobile-header {
@@ -1440,7 +1438,7 @@ $studentSaveError = '';
           const studentIdField = document.getElementById('student-id-field');
           const submitBtn = document.getElementById('submit-btn');
 
-<<<<<<< HEAD
+
         function openStudentModal() {
           if (!modalBackdrop) return;
           modalBackdrop.style.display = 'flex';
@@ -1531,13 +1529,13 @@ $studentSaveError = '';
           }
           if (semSelect) {
             semSelect.addEventListener('change', syncGlobalFilter);
-=======
+
           function openStudentModal() {
             if (!modalBackdrop) return;
             modalBackdrop.style.display = 'flex';
             if (btnAddStudent) btnAddStudent.style.display = 'none';
             resetForm();
->>>>>>> 3b6f20fcc5342bc3e2d7bf193e6c1f9123790c85
+ 
           }
 
           function closeStudentModal() {
@@ -1648,7 +1646,7 @@ $studentSaveError = '';
               });
             });
 
-<<<<<<< HEAD
+
           if (studentIdField && studentIdField.value) {
             submitBtn.name = 'update_student';
             submitBtn.textContent = 'Update Student';
@@ -1660,7 +1658,7 @@ $studentSaveError = '';
 $content = ob_get_clean();
 require_once __DIR__ . '/inc/app_layout.php';
 ?>
-=======
+
             const studentForm = document.getElementById('student-form');
             if (studentForm) {
               studentForm.addEventListener('submit', function() {
@@ -1680,4 +1678,4 @@ require_once __DIR__ . '/inc/app_layout.php';
         </script>
       </body
       </html>
->>>>>>> 3b6f20fcc5342bc3e2d7bf193e6c1f9123790c85
+
