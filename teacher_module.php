@@ -79,7 +79,7 @@ $isPeriodOpen = [
 if ($activeSectionId && $activeSubjectId) {
     $students = get_section_students($activeSectionId);
     foreach ($students as $st) {
-        $g = get_grade($st['id'], $activeSubjectId, $schoolYear, $semester);
+        $g = get_grade((int)($st['id'] ?? 0), $activeSubjectId, $schoolYear, $semester);
         $gradesData[$st['id']] = $g ?: ['prelim'=>'', 'midterm'=>'', 'finals'=>'', 'average'=>'', 'gwa'=>'', 'remarks'=>''];
     }
 }
@@ -110,7 +110,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_all_grades'])) {
             }
             if (!$cfg['allowed']) continue;
 
+            // Teacher is allowed to input grades ONLY ONCE per grading period.
+            // If a grade already exists for the student+subject+term and this period
+            // is already filled, block further updates (admin-only via grade_requests).
             $existing = get_grade($sid, $subjectId, $sy, $sem);
+            $existingVal = null;
+            if ($existing) {
+                $existingVal = $existing[$period] ?? null;
+                // Treat empty string as not set
+                if ($existingVal === '') $existingVal = null;
+                // Treat 0 as a valid submitted grade (0 is within 0-100)
+            }
+
+            // If there is an active admin-approved permission grant for this
+            // grading period, allow updates even if a value already exists.
+            // Otherwise, block teacher edits once the period is already submitted.
+            $hasPermission = is_period_open_for_teacher($userId, $sy, $sem, $period);
+
+            if ($existingVal !== null && !$hasPermission) {
+                continue;
+            }
+
+
+            // Create row placeholder if not exists.
             if (!$existing) {
                 save_grade($sid, $subjectId, $userId, $sectionId, $sy, $sem, null, null, null);
             }
@@ -225,6 +247,7 @@ ob_start();
                 <input type="hidden" name="school_year" value="<?php echo htmlspecialchars($schoolYear); ?>">
                 <input type="hidden" name="semester" value="<?php echo htmlspecialchars($semester); ?>">
                 <input type="hidden" name="save_all_grades" value="1">
+<<<<<<< HEAD
                 <div class="grades-grid">
                     <div class="grade-row header">
                         <div>Student ID</div>
@@ -251,6 +274,46 @@ ob_start();
                         <div><span class="gwa-badge">-</span></div>
                     </div>
                     <?php endforeach; ?>
+=======
+                <div class="table-responsive">
+                    <table class="grade-table">
+                        <thead>
+                            <tr>
+                                <th style="width:22%;">Student ID</th>
+                                <th style="width:32%;">Name</th>
+                                <th style="width:16%;">Prelim <span class="status-badge badge-<?php echo $isPeriodOpen['prelim'] ? 'open' : 'closed'; ?>"><?php echo $isPeriodOpen['prelim'] ? 'Open' : 'Closed'; ?></span></th>
+                                <th style="width:16%;">Midterm <span class="status-badge badge-<?php echo $isPeriodOpen['midterm'] ? 'open' : 'closed'; ?>"><?php echo $isPeriodOpen['midterm'] ? 'Open' : 'Closed'; ?></span></th>
+                                <th style="width:15%;">Finals <span class="status-badge badge-<?php echo $isPeriodOpen['finals'] ? 'open' : 'closed'; ?>"><?php echo $isPeriodOpen['finals'] ? 'Open' : 'Closed'; ?></span></th>
+                                <th style="width:14%;">Total Grade</th>
+                                <th style="width:13%;">GWA</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($students as $st): 
+                                $g = $gradesData[$st['id']] ?? [];
+                                // If period is open (deadline or admin-granted permission), enable input.
+                                // Also allow inputs again after admin approval even if a value already exists.
+                                $prelimDisabled  = ($isPeriodOpen['prelim'] ?? false) ? '' : 'disabled';
+                                $midtermDisabled = ($isPeriodOpen['midterm'] ?? false) ? '' : 'disabled';
+                                $finalsDisabled  = ($isPeriodOpen['finals'] ?? false) ? '' : 'disabled';
+
+                            ?>
+                            <tr>
+                                <td>
+                                    <span class="student-id"><?php echo htmlspecialchars($st['student_id'] ?? ''); ?></span>
+                                    <input type="hidden" name="student_ids[]" value="<?php echo (int)($st['id'] ?? 0); ?>">
+                                </td>
+                                <td><span class="student-name"><?php echo htmlspecialchars(make_full_name($st['first_name'] ?? '', $st['middle_name'] ?? '', $st['last_name'] ?? '')); ?></span></td>
+                                <td><div class="grade-input-wrapper"><input type="number" step="0.01" name="prelim_values[]" class="grade-input grade-input--period" data-period="prelim" value="<?php echo htmlspecialchars($g['prelim'] ?? ''); ?>" <?php echo $prelimDisabled; ?>></div></td>
+                                <td><div class="grade-input-wrapper"><input type="number" step="0.01" name="midterm_values[]" class="grade-input grade-input--period" data-period="midterm" value="<?php echo htmlspecialchars($g['midterm'] ?? ''); ?>" <?php echo $midtermDisabled; ?>></div></td>
+                                <td><div class="grade-input-wrapper"><input type="number" step="0.01" name="finals_values[]" class="grade-input grade-input--period" data-period="finals" value="<?php echo htmlspecialchars($g['finals'] ?? ''); ?>" <?php echo $finalsDisabled; ?>></div></td>
+                                <td><span class="total-grade">-</span></td>
+                                <td><span class="gwa-badge">-</span></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+>>>>>>> 3b6f20fcc5342bc3e2d7bf193e6c1f9123790c85
                 </div>
                 <?php if ($anyOpen): ?>
                     <div class="form-actions" style="margin-top:16px;">

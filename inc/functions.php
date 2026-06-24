@@ -59,7 +59,7 @@ function make_full_name(string $first, string $middle, string $last): string {
 }
 
 function generate_password(string $lastName, ?int $id = null): string {
-    // Convert spaces to underscores, as requested (e.g., "De la Cruz" => "De_la_Cruz").
+    // Convert spaces to underscores (e.g., "De la Cruz" => "De_la_Cruz").
     // Keep only alphanumeric and underscores for the password base.
     $base = str_replace(' ', '_', trim($lastName));
     $base = preg_replace('/[^a-zA-Z0-9_]/', '', $base);
@@ -105,6 +105,12 @@ function authenticate_user(string $username, string $password): ?array {
                 $conn->close();
                 return array_merge($row, ['role' => 'teacher']);
             }
+            $fallback = generate_password($row['last_name'], (int)$row['id']);
+            if ($fallback === $password) {
+                $stmt->close();
+                $conn->close();
+                return array_merge($row, ['role' => 'teacher']);
+            }
 
             // If teacher exists but has no usable password fields, fall through to return null.
         }
@@ -133,11 +139,16 @@ function authenticate_user(string $username, string $password): ?array {
                     $conn->close();
                     return array_merge($row, ['role' => 'teacher']);
                 }
+                $fallback = generate_password($row['last_name'], (int)$row['id']);
+                if ($fallback === $password) {
+                    $stmt->close();
+                    $conn->close();
+                    return array_merge($row, ['role' => 'teacher']);
+                }
             }
             $stmt->close();
         }
     }
-
 
 
     $stmt = $conn->prepare("SELECT id, student_id, first_name, middle_name, last_name, password_hash, password FROM students WHERE student_id = ? LIMIT 1");
@@ -206,7 +217,7 @@ function get_section_students(int $sectionId): array {
     $conn = db_connect();
     if (!$conn) return [];
 
-    $stmt = $conn->prepare("SELECT s.id, s.student_id, s.first_name, s.middle_name, s.last_name, s.name,
+    $stmt = $conn->prepare("SELECT s.id, s.student_id, s.first_name, s.middle_name, s.last_name,
             sec.name AS section_code, sec.name as section_name
         FROM students s
         LEFT JOIN sections sec ON s.section_id = sec.id
@@ -610,23 +621,22 @@ function normalize_semester($semester): string {
 }
 
 function get_global_term(): array {
+    // IMPORTANT: keep this function request-scoped.
+    // Do NOT persist global term into $_SESSION here, otherwise one tab's
+    // navigation/redirect can affect other open tabs on subsequent loads.
+
     $options = get_term_options();
+
     $yearCandidates = array_filter([
         $_GET['global_year'] ?? '',
-        $_SESSION['global_year'] ?? '',
         $_GET['school_year'] ?? '',
         $_GET['academic_year'] ?? '',
-        $_SESSION['teacher_sy'] ?? '',
-        $_SESSION['student_filter_year'] ?? '',
     ], fn($v) => normalize_school_year($v) !== '');
 
     $semCandidates = array_filter([
         $_GET['global_sem'] ?? '',
         $_GET['global_semester'] ?? '',
-        $_SESSION['global_sem'] ?? '',
         $_GET['semester'] ?? '',
-        $_SESSION['teacher_sem'] ?? '',
-        $_SESSION['student_filter_sem'] ?? '',
     ], fn($v) => normalize_semester($v) !== '');
 
     $year = normalize_school_year(reset($yearCandidates));
@@ -635,15 +645,9 @@ function get_global_term(): array {
     if (!in_array($year, $options['years'], true)) $year = $options['years'][0] ?? '2025-2026';
     if (!in_array($sem, $options['semesters'], true)) $sem = $options['semesters'][0] ?? '1st Semester';
 
-    $_SESSION['global_year'] = $year;
-    $_SESSION['global_sem'] = $sem;
-    $_SESSION['teacher_sy'] = $year;
-    $_SESSION['teacher_sem'] = $sem;
-    $_SESSION['student_filter_year'] = $year;
-    $_SESSION['student_filter_sem'] = $sem;
-
     return ['year' => $year, 'semester' => $sem];
 }
+
 
 function get_departments(): array {
     $conn = db_connect();
@@ -1069,6 +1073,19 @@ function create_student(string $firstName, ?string $middleName, string $lastName
     $conn = db_connect();
     if (!$conn) return ['success' => false, 'error' => 'Database connection failed.'];
 
+    $check = $conn->prepare("SELECT id FROM students WHERE first_name = ? AND middle_name = ? AND last_name = ? LIMIT 1");
+    if ($check) {
+        $check->bind_param('sss', $firstName, $middleName, $lastName);
+        $check->execute();
+        $cRes = $check->get_result();
+        if ($cRes && $cRes->fetch_assoc()) {
+            $check->close();
+            $conn->close();
+            return ['success' => false, 'error' => 'Student already exists.'];
+        }
+        $check->close();
+    }
+
     $stmt = $conn->prepare("INSERT INTO students (first_name, middle_name, last_name, section_id, department) VALUES (?, ?, ?, ?, ?)");
     if (!$stmt) { $conn->close(); return ['success' => false, 'error' => $conn->error]; }
 
@@ -1077,36 +1094,64 @@ function create_student(string $firstName, ?string $middleName, string $lastName
     $id = $conn->insert_id;
     $stmt->close();
 
-    if ($ok && $id) {
-        $upd = $conn->prepare("UPDATE students SET student_id = ? WHERE id = ?");
-        if ($upd) {
-            $generatedId = 'S-' . sprintf('%03d', $id);
-            $upd->bind_param('si', $generatedId, $id);
-            $upd->execute();
-            $upd->close();
-        }
-
-        $tempPassword = generate_password($lastName, (int)$id);
-        $hash = password_hash($tempPassword, PASSWORD_DEFAULT);
-        $pwdUpd = $conn->prepare("UPDATE students SET password_hash = ? WHERE id = ?");
-        if ($pwdUpd) {
-            $pwdUpd->bind_param('si', $hash, $id);
-            $pwdUpd->execute();
-            $pwdUpd->close();
-        }
-
+    if (!$ok || !$id) {
         $conn->close();
+        return ['success' => false, 'error' => 'Failed to create student.'];
+    }
 
-        return [
-            'success' => true,
-            'id' => (int)$id,
-            'student_id' => $generatedId,
-            'temp_password' => $tempPassword,
-        ];
+    $generatedId = 'S-' . sprintf('%03d', $id);
+
+    $upd = $conn->prepare("UPDATE students SET student_id = ? WHERE id = ?");
+    if ($upd) {
+        $upd->bind_param('si', $generatedId, $id);
+        $updOk = $upd->execute();
+        $upd->close();
+        if (!$updOk) {
+            $conn->query("DELETE FROM students WHERE id = " . (int)$id);
+            $conn->close();
+            return ['success' => false, 'error' => 'Failed to set student ID: ' . $conn->error];
+        }
+    }
+
+    $tempPassword = generate_password($lastName, (int)$id);
+    $hash = password_hash($tempPassword, PASSWORD_DEFAULT);
+    $pwdUpd = $conn->prepare("UPDATE students SET password_hash = ? WHERE id = ?");
+    if ($pwdUpd) {
+        $pwdUpd->bind_param('si', $hash, $id);
+        $pwdUpd->execute();
+        $pwdUpd->close();
     }
 
     $conn->close();
-    return ['success' => false, 'error' => 'Failed to create student.'];
+
+    return [
+        'success' => true,
+        'id' => (int)$id,
+        'student_id' => $generatedId,
+        'temp_password' => $tempPassword,
+    ];
+}
+
+function repair_missing_student_ids(): int {
+    $conn = db_connect();
+    if (!$conn) return 0;
+    $count = 0;
+    $res = $conn->query("SELECT id FROM students WHERE student_id IS NULL OR student_id = ''");
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            $id = (int)$row['id'];
+            $generatedId = 'S-' . sprintf('%03d', $id);
+            $upd = $conn->prepare("UPDATE students SET student_id = ? WHERE id = ?");
+            if ($upd) {
+                $upd->bind_param('si', $generatedId, $id);
+                if ($upd->execute()) $count++;
+                $upd->close();
+            }
+        }
+        $res->free();
+    }
+    $conn->close();
+    return $count;
 }
 
 function update_student(int $studentId, string $firstName, ?string $middleName, string $lastName, ?int $sectionId, ?string $department, ?string $email): bool {
