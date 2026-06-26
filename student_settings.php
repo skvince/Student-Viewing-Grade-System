@@ -4,13 +4,8 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'student') {
-    if (isset($_GET['student_id'])) {
-        $_SESSION['user_role'] = 'student';
-        $_SESSION['user_id'] = intval($_GET['student_id']);
-    } else {
-        header('Location: login.php');
-        exit;
-    }
+    header('Location: login.php');
+    exit;
 }
 
 $userId = intval($_SESSION['user_id']);
@@ -56,7 +51,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
         if ($result['success']) {
             $message = 'Password changed successfully.';
             $messageType = 'success';
-            create_notification($userId, 'student', 'Password Changed', 'Your password was changed successfully.', 'success', 'student_settings.php');
         } else {
             $message = $result['error'];
             $messageType = 'error';
@@ -73,6 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
   <link rel="icon" type="image/png" href="https://cscqcph.com/images/bg/cscqcph.png"/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <style>
   :root {
       --bg-color: #f1f4f2;
@@ -107,11 +102,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
   .alert-error { background-color:#fee2e2; color:#991b1b; }
   .alert-info { background-color:#dbeafe; color:#1e40af; }
   .nav-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px; max-width:720px; }
-.nav-card { background:var(--card-bg); border:1px solid var(--border-color); border-radius:8px; padding:16px; text-decoration:none; color:inherit; display:flex; align-items:center; gap:12px; transition:transform .15s ease, box-shadow .15s ease; }
-.nav-card:hover { transform:translateY(-2px); box-shadow:0 4px 6px rgba(0,0,0,0.05); background:var(--light-green-bg); }
-.nav-card.active { background:var(--light-green-bg); border-color:var(--primary-green); }
-.nav-card i { font-size:1.5rem; color:var(--primary-green); width:24px; text-align:center; }
-.nav-card span { font-weight:600; font-size:0.9rem; }
+ .nav-card { background:var(--card-bg); border:1px solid var(--border-color); border-radius:8px; padding:16px; text-decoration:none; color:inherit; display:flex; align-items:center; gap:12px; transition:transform .15s ease, box-shadow .15s ease; }
+ .nav-card:hover { transform:translateY(-2px); box-shadow:0 4px 6px rgba(0,0,0,0.05); background:var(--light-green-bg); }
+ .nav-card.active { background:var(--light-green-bg); border-color:var(--primary-green); }
+ .nav-card i { font-size:1.5rem; color:var(--primary-green); width:24px; text-align:center; }
+ .nav-card span { font-weight:600; font-size:0.9rem; }
   .table-responsive { width:100%; overflow-x:auto; }
   table { width:100%; border-collapse:collapse; text-align:left; font-size:0.85rem; min-width:500px; }
   th { color:#4b5563; background-color:#f9fafb; font-weight:600; text-transform:uppercase; font-size:0.75rem; padding:12px 16px; border-bottom:1px solid var(--border-color); }
@@ -186,8 +181,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
           <button type="submit" name="change_password" class="btn-submit"><i class="fa-solid fa-key"></i> Change Password</button>
           <button type="reset" class="btn-cancel">Reset</button>
         </div>
-      </form>
-    </section>
-  </main>
-</body>
+</form>
+       </section>
+     </main>
+<script>
+       document.addEventListener('DOMContentLoaded', function() {
+         var logoutBtn = document.querySelector('.logout-btn');
+         if (logoutBtn) {
+           logoutBtn.addEventListener('click', function(e) {
+             e.preventDefault();
+             var self = this;
+             Swal.fire({
+               title: 'Are you sure you want to log out?',
+               text: 'You will be signed out of your account.',
+               icon: 'warning',
+               showCancelButton: true,
+               confirmButtonColor: '#0e4429',
+               cancelButtonColor: '#6b7280',
+               confirmButtonText: 'Yes, Log Out',
+               cancelButtonText: 'Cancel'
+             }).then(function(result) {
+               if (result.isConfirmed) {
+                 window.location.href = 'login.php?logout=1';
+               }
+             });
+           });
+         }
+       });
+     </script>
+  </body>
 </html>

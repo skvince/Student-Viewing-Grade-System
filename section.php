@@ -477,7 +477,7 @@ if (count($departments)) {
 if (count($sections)) {
     foreach ($sections as $section) {
         echo '<tr>';
-        echo '<td>' . htmlspecialchars($section['name']) . '</td>';
+        echo '<td>' . htmlspecialchars($section['section_code'] ?? '') . '</td>';
         echo '<td>' . htmlspecialchars($section['name']) . '</td>';
         echo '<td>' . htmlspecialchars($section['school_year'] ?? '') . '</td>';
         echo '<td>' . htmlspecialchars($section['semester'] ?? '') . '</td>';

@@ -45,6 +45,7 @@ $content           = $content ?? '';
 <link rel="icon" type="image/png" href="https://cscqcph.com/images/bg/cscqcph.png"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <style>
 :root{--bg-color:#f1f4f2;--sidebar-bg:#fff;--text-color:#333;--text-muted:#666;--primary-green:#0e4429;--primary-green-hover:#165c39;--light-green-bg:#d8ebd4;--active-nav-bg:#b9deb3;--border-color:#e5e7eb;--card-bg:#fff}
 *{box-sizing:border-box;margin:0;padding:0;font-family:"Inter",sans-serif}
@@ -313,16 +314,19 @@ th:last-child,.actions-cell{text-align:center;width:100px;min-width:100px}
           ['href'=>'teacher_requests.php?view=requests&global_year='.urlencode($schoolYear).'&global_sem='.urlencode($semester),'icon'=>'fa-paper-plane','label'=>'My Requests','nav'=>'requests'],
           ['href'=>'teacher_settings.php?view=settings&global_year='.urlencode($schoolYear).'&global_sem='.urlencode($semester),'icon'=>'fa-gear','label'=>'Settings','nav'=>'settings'],
         ];
-      } elseif ($role==='student') {
-        $navItems = [
-          ['href'=>'student_module.php','icon'=>'fa-graduation-cap','label'=>'My Grades','nav'=>'grades'],
-          ['href'=>'student_requests.php','icon'=>'fa-paper-plane','label'=>'My Requests','nav'=>'requests'],
-          ['href'=>'student_settings.php','icon'=>'fa-gear','label'=>'Settings','nav'=>'settings'],
-        ];
       }
       foreach ($navItems as $item):
         $isActive = ($activeNav === ($item['nav'] ?? ''));
-        $href = $item['href'] . (strpos($item['href'], '?')===false ? '?' : '&') . 'global_year=' . urlencode($schoolYear) . '&global_sem=' . urlencode($semester);
+        $baseUrl = $item['href'];
+        $url = parse_url($baseUrl);
+        $path = $url['path'] ?? $baseUrl;
+        $query = [];
+        if (!empty($url['query'])) {
+            parse_str($url['query'], $query);
+        }
+        $query['global_year'] = $schoolYear;
+        $query['global_sem'] = $semester;
+        $href = $path . '?' . http_build_query($query);
       ?>
         <a href="<?php echo htmlspecialchars($href); ?>" class="nav-link <?php echo $isActive?'active':''; ?>">
           <i class="fa-solid <?php echo htmlspecialchars($item['icon']); ?>"></i>

@@ -4,13 +4,8 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'teacher') {
-    if (isset($_GET['teacher_id'])) {
-        $_SESSION['user_role'] = 'teacher';
-        $_SESSION['user_id'] = intval($_GET['teacher_id']);
-    } else {
-        header('Location: login.php');
-        exit;
-    }
+    header('Location: login.php');
+    exit;
 }
 
 $userId = intval($_SESSION['user_id']);
@@ -59,7 +54,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($result['success']) {
                 $message = 'Password changed successfully.';
                 $messageType = 'success';
-                create_notification($userId, 'teacher', 'Password Changed', 'Your password was changed successfully.', 'success', 'teacher_settings.php');
             } else {
                 $message = $result['error'];
                 $messageType = 'error';
@@ -71,7 +65,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $message = 'Profile picture updated successfully.';
             $messageType = 'success';
             $profilePicture = $result['filename'];
-            create_notification($userId, 'teacher', 'Profile Picture Updated', 'Your profile picture has been updated successfully.', 'success', 'teacher_settings.php');
         } else {
             $message = $result['error'];
             $messageType = 'error';

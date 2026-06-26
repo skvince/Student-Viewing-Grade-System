@@ -105,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($sjRow = $sjRes->fetch_assoc()) $subjectTitle = $sjRow['title'];
                     $sjStmt->close();
                 }
-                audit_log('admin_grade_override', $_SESSION['user_id'], $period, $postYear, $postSem, $gradeId, null, $postSubjectId, null, null, null, null, $oldGrade, $newGrade, $studentName, $subjectTitle);
+                audit_log('admin_grade_override', $_SESSION['user_id'], $period, $postYear, $postSem, $gradeId, null, $postSubjectId, null);
                 $message = 'Grade updated successfully.';
                 $messageType = 'success';
             } else {
@@ -127,7 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 if ($selectedStudentId) {
-    audit_log('admin_view_student_grades', $_SESSION['user_id'], null, $filterYear, $filterSem, null, null, null, null, null, null, null, null, null, null, null, (string)$selectedStudentId);
+    audit_log('admin_view_student_grades', $_SESSION['user_id'], null, $filterYear, $filterSem, $selectedStudentId, null, null, null);
 }
 
 $students = [];

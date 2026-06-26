@@ -40,10 +40,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $message = 'End date must be after start date.';
             $messageType = 'error';
         } else {
-            $startFormatted = $startDt->format('Y-m-d H:i:s');
-            $endFormatted = $endDt->format('Y-m-d H:i:s');
+           $startFormatted = $startDt->format('Y-m-d H:i:s');
+          $endFormatted = $endDt->format('Y-m-d H:i:s');
             $result = save_grade_viewing_schedule($schoolYear, $semester, $startFormatted, $endFormatted, $isActive);
-            if ($result) {
+            if ($result !== null) {
                 audit_log('save_viewing_schedule', $_SESSION['user_id'], null, $schoolYear, $semester);
                 $message = 'Grade viewing schedule saved successfully.';
                 $messageType = 'success';
@@ -168,41 +168,7 @@ $selectedYearSchedules = $schedules;
       </div>
     </div>
 
-    <div class="panel-block">
-      <div class="header-row">
-        <div>
-          <div class="section-title">Upcoming Deadlines</div>
-          <div class="section-subtitle">Grade submission deadlines for <?= htmlspecialchars($selectedYear) ?> / <?= htmlspecialchars($selectedSem) ?></div>
-        </div>
-      </div>
-      <?php
-      $upcomingDeadlines = get_upcoming_deadlines($selectedYear, $selectedSem, 5);
-      ?>
-      <?php if (!empty($upcomingDeadlines)): ?>
-        <div class="table-responsive">
-          <table class="stats-table">
-            <thead>
-              <tr>
-                <th>Period</th>
-                <th>Deadline</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              <?php foreach ($upcomingDeadlines as $d): ?>
-                <tr>
-                  <td><strong><?= htmlspecialchars(ucfirst($d['grading_period'])) ?></strong></td>
-                  <td><?= date('M d, Y h:i A', strtotime($d['end_date'])) ?></td>
-                  <td><span class="badge badge-<?= htmlspecialchars($d['status']) ?>"><?= htmlspecialchars(ucfirst($d['status'])) ?></span></td>
-                </tr>
-              <?php endforeach; ?>
-            </tbody>
-          </table>
-        </div>
-      <?php else: ?>
-        <p style="color:var(--text-muted);padding:18px 0;">No upcoming deadlines configured.</p>
-      <?php endif; ?>
-    </div>
+
 
   <script>
     const yearSelect = document.getElementById('global-filter-year');
@@ -308,25 +274,53 @@ $selectedYearSchedules = $schedules;
       form.submit();
     }
 
-    document.addEventListener('DOMContentLoaded', function() {
-      if (yearSelect) yearSelect.addEventListener('change', syncGlobalFilter);
-      if (semSelect) semSelect.addEventListener('change', syncGlobalFilter);
+document.addEventListener('DOMContentLoaded', function() {
+       if (yearSelect) yearSelect.addEventListener('change', syncGlobalFilter);
+       if (semSelect) semSelect.addEventListener('change', syncGlobalFilter);
 
-      document.querySelectorAll('.btn-save-viewing').forEach(btn => {
-        btn.addEventListener('click', function() {
-          saveViewingSchedule(this.getAttribute('data-semester'), this.getAttribute('data-year'));
-        });
-      });
+       document.querySelectorAll('.btn-save-viewing').forEach(btn => {
+         btn.addEventListener('click', function() {
+           var semester = this.getAttribute('data-semester');
+           var year = this.getAttribute('data-year');
+           saveViewingSchedule(semester, year);
+         });
+       });
 
-      document.querySelectorAll('.btn-toggle-viewing').forEach(btn => {
-        btn.addEventListener('click', function() {
-          toggleViewingSchedule(this.getAttribute('data-id'), this.getAttribute('data-active'));
-        });
-      });
-    });
+       document.querySelectorAll('.btn-toggle-viewing').forEach(btn => {
+         btn.addEventListener('click', function() {
+           var id = this.getAttribute('data-id');
+           var currentActive = this.getAttribute('data-active');
+           var action = currentActive === '1' ? 'disable' : 'enable';
+           var self = this;
+           Swal.fire({
+             title: 'Confirm ' + action.charAt(0).toUpperCase() + action.slice(1),
+             text: 'Are you sure you want to ' + action + ' this schedule?',
+             icon: 'question',
+             showCancelButton: true,
+             confirmButtonColor: '#0e4429',
+             cancelButtonColor: '#6b7280',
+             confirmButtonText: 'Yes, ' + action.charAt(0).toUpperCase() + action.slice(1),
+             cancelButtonText: 'Cancel'
+           }).then(function(result) {
+             if (result.isConfirmed) {
+               toggleViewingSchedule(id, currentActive);
+             }
+           });
+         });
+       });
+     });
   </script>
 
 <?php
 $content = ob_get_clean();
 require_once __DIR__ . '/inc/app_layout.php';
+?>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    <?php if ($message): ?>
+      showAlert('<?php echo $messageType; ?>', '<?php echo $messageType === 'success' ? 'Success' : ($messageType === 'error' ? 'Error' : 'Notice'); ?>', '<?php echo addslashes(htmlspecialchars($message)); ?>');
+    <?php endif; ?>
+  });
+</script>
 ?>

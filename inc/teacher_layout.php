@@ -4,13 +4,8 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'teacher') {
-    if (isset($_GET['teacher_id'])) {
-        $_SESSION['user_role'] = 'teacher';
-        $_SESSION['user_id'] = intval($_GET['teacher_id']);
-    } else {
-        header('Location: login.php');
-        exit;
-    }
+    header('Location: login.php');
+    exit;
 }
 $userId = intval($_SESSION['user_id']);
 $profile = get_teacher_profile($userId);

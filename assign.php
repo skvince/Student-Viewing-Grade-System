@@ -792,6 +792,11 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
           subUnitsInput.value = data.units || '3';
           subYearSelect.value = data.year || '';
           subSemSelect.value = data.semester || '';
+          const formBtns = document.querySelector('#subject-block-container .form-buttons-row');
+          if (formBtns && !formBtns.querySelector('[name="update_subject"]')) {
+            formBtns.innerHTML = '<button type="submit" name="update_subject" class="btn-submit"><i class="fa-solid fa-floppy-disk"></i> Update Subject</button><button type="button" class="btn-cancel" id="btn-cancel-subject-edit">Cancel</button>';
+            document.getElementById('btn-cancel-subject-edit').addEventListener('click', cancelSubjectEdit);
+          }
           document.getElementById('sub-code-input').focus();
           window.scrollTo({ top: document.getElementById('subject-block-container').offsetTop - 20, behavior: 'smooth' });
         });

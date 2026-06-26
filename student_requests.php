@@ -4,13 +4,8 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'student') {
-    if (isset($_GET['student_id'])) {
-        $_SESSION['user_role'] = 'student';
-        $_SESSION['user_id'] = intval($_GET['student_id']);
-    } else {
-        header('Location: login.php');
-        exit;
-    }
+    header('Location: login.php');
+    exit;
 }
 
 $userId = intval($_SESSION['user_id']);
@@ -32,30 +27,25 @@ if ($conn) {
     $conn->close();
 }
 
-revoke_expired_access_grants();
-
 $message = '';
 $messageType = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
     if (!verify_csrf()) { header('Location: ' . $_SERVER['PHP_SELF']); exit; }
-    $reqYear = trim($_POST['school_year'] ?? '');
-    $reqSem = normalize_semester($_POST['semester'] ?? '');
+    $schoolYear = trim($_POST['school_year'] ?? '');
+    $semester = trim($_POST['semester'] ?? '');
     $reason = trim($_POST['reason'] ?? '');
 
-    if (!$reqYear || !$reqSem) {
+    if (!$schoolYear || !$semester) {
         $message = 'Academic Year and Semester are required.';
         $messageType = 'error';
-    } elseif (is_grade_viewing_active($reqYear, $reqSem)) {
-        $message = 'Grade viewing is currently active for the selected term. No request needed.';
-        $messageType = 'error';
-    } elseif (check_student_grade_access($userId, $reqYear, $reqSem)) {
-        $message = 'You already have access to view grades for the selected term.';
+    } elseif (!is_request_submission_active($schoolYear, $semester)) {
+        $message = 'Grade access requests are not currently open for this period. Please check the schedule.';
         $messageType = 'error';
     } else {
-        $requestId = create_grade_access_request($userId, $reqYear, $reqSem, $reason ?: null);
-        if ($requestId) {
-            $message = 'Grade access request submitted successfully. You can track its status below.';
+        $result = create_grade_access_request($userId, $schoolYear, $semester, $reason ?: null);
+        if ($result) {
+            $message = 'Grade access request submitted successfully.';
             $messageType = 'success';
         } else {
             $message = 'Failed to submit request. Please try again.';
@@ -77,6 +67,13 @@ $yearOptions = array_values(array_unique(array_merge($yearOptions, $defaultYearO
 $validPairs = get_student_valid_terms($userId);
 $semOptions = get_semesters_for_year($validPairs, $filterYear);
 if (empty($semOptions)) $semOptions = ['1st Semester', '2nd Semester', 'Summer'];
+
+$requestSchedules = get_request_schedules('', '');
+$requestOpenForCurrent = is_request_submission_active($filterYear, $filterSem);
+$requestSchedulesByTerm = [];
+foreach ($requestSchedules as $s) {
+    $requestSchedulesByTerm[$s['school_year']][$s['semester']] = $s;
+}
 ?>
 <!doctype html>
 <html lang="en">
@@ -204,7 +201,11 @@ if (empty($semOptions)) $semOptions = ['1st Semester', '2nd Semester', 'Summer']
           <h2 class="panel-title">My Grade Access Requests</h2>
           <p style="font-size:0.8rem;color:var(--text-muted);">Track the status of your grade viewing requests</p>
         </div>
-        <button type="button" class="btn-add" id="btn-new-request"><i class="fa-solid fa-plus"></i> New Request</button>
+        <?php if ($requestOpenForCurrent): ?>
+          <button type="button" class="btn-add" id="btn-new-request"><i class="fa-solid fa-plus"></i> New Request</button>
+        <?php else: ?>
+          <button type="button" class="btn-add" disabled style="opacity:0.5;cursor:not-allowed;"><i class="fa-solid fa-plus"></i> Requests Closed</button>
+        <?php endif; ?>
       </div>
       <div class="table-responsive">
         <table>
@@ -257,13 +258,14 @@ if (empty($semOptions)) $semOptions = ['1st Semester', '2nd Semester', 'Summer']
           <label for="req-reason">Reason (Optional)</label>
           <textarea name="reason" id="req-reason" class="form-control" rows="4" placeholder="Please explain why you need access..."></textarea>
         </div>
-        <div style="display:flex;gap:12px;align-items:center;">
-          <button type="submit" name="submit_request" class="btn-submit"><i class="fa-solid fa-paper-plane"></i> Submit Request</button>
-          <button type="button" class="btn-cancel" id="btn-cancel-request">Cancel</button>
-        </div>
-      </form>
-    </div>
-  </div>
+<div style="display:flex;gap:12px;align-items:center;">
+           <?php $canSubmit = false; if (isset($requestSchedulesByTerm[$filterYear][$filterSem])) { $canSubmit = $requestSchedulesByTerm[$filterYear][$filterSem]['is_active']; } ?>
+           <button type="submit" name="submit_request" class="btn-submit" <?php echo $canSubmit ? '' : 'disabled'; ?>><?php echo $canSubmit ? '<i class="fa-solid fa-paper-plane"></i> Submit Request' : 'Requests Not Open'; ?></button>
+           <button type="button" class="btn-cancel" id="btn-cancel-request">Cancel</button>
+         </div>
+       </form>
+     </div>
+   </div>
 
   <script>
     const btnNewRequest = document.getElementById('btn-new-request');

@@ -421,21 +421,23 @@ function get_department_student_stats(string $schoolYear = '', string $semester 
     $conn = db_connect();
     if (!$conn) return [];
 
-    $sql = "SELECT s.department, COUNT(*) AS total_students FROM students s WHERE 1=1";
+    $sql = "SELECT s.department, COUNT(DISTINCT s.id) AS total_students FROM students s";
     $params = '';
     $vals = [];
 
-    if ($schoolYear) {
-        $sql .= " AND (s.id IN (SELECT student_id FROM grades WHERE school_year = ?) OR s.id NOT IN (SELECT student_id FROM grades WHERE school_year = ?))";
-        $params .= 'ss';
-        $vals[] = $schoolYear;
-        $vals[] = $schoolYear;
-    }
-    if ($semester) {
-        $sql .= " AND (s.id IN (SELECT student_id FROM grades WHERE semester = ?) OR s.id NOT IN (SELECT student_id FROM grades WHERE semester = ?))";
-        $params .= 'ss';
-        $vals[] = $semester;
-        $vals[] = $semester;
+    if ($schoolYear || $semester) {
+        $sql .= " WHERE s.id IN (SELECT student_id FROM grades WHERE 1=1";
+        if ($schoolYear) {
+            $sql .= " AND school_year = ?";
+            $params .= 's';
+            $vals[] = $schoolYear;
+        }
+        if ($semester) {
+            $sql .= " AND semester = ?";
+            $params .= 's';
+            $vals[] = $semester;
+        }
+        $sql .= ")";
     }
 
     $sql .= " GROUP BY s.department ORDER BY total_students DESC";
@@ -461,21 +463,23 @@ function get_department_teacher_stats(string $schoolYear = '', string $semester 
     $conn = db_connect();
     if (!$conn) return [];
 
-    $sql = "SELECT t.department, COUNT(*) AS total_teachers FROM teachers t WHERE 1=1";
+    $sql = "SELECT t.department, COUNT(DISTINCT t.id) AS total_teachers FROM teachers t";
     $params = '';
     $vals = [];
 
-    if ($schoolYear) {
-        $sql .= " AND (t.id IN (SELECT teacher_id FROM assignments WHERE school_year = ?) OR t.id NOT IN (SELECT teacher_id FROM assignments WHERE school_year = ?))";
-        $params .= 'ss';
-        $vals[] = $schoolYear;
-        $vals[] = $schoolYear;
-    }
-    if ($semester) {
-        $sql .= " AND (t.id IN (SELECT teacher_id FROM assignments WHERE semester = ?) OR t.id NOT IN (SELECT teacher_id FROM assignments WHERE semester = ?))";
-        $params .= 'ss';
-        $vals[] = $semester;
-        $vals[] = $semester;
+    if ($schoolYear || $semester) {
+        $sql .= " WHERE t.id IN (SELECT teacher_id FROM assignments WHERE 1=1";
+        if ($schoolYear) {
+            $sql .= " AND school_year = ?";
+            $params .= 's';
+            $vals[] = $schoolYear;
+        }
+        if ($semester) {
+            $sql .= " AND semester = ?";
+            $params .= 's';
+            $vals[] = $semester;
+        }
+        $sql .= ")";
     }
 
     $sql .= " GROUP BY t.department ORDER BY total_teachers DESC";
@@ -721,9 +725,11 @@ function get_deadline_status(string $schoolYear, string $semester, string $gradi
 
     if ($status === 'open' || $status === 'extended') {
         $now = new DateTime();
-        $end = new DateTime($row['end_date']);
-        if ($now > $end && $status !== 'extended') {
-            return 'closed';
+        if (!empty($row['end_date'])) {
+            $end = new DateTime($row['end_date']);
+            if ($now > $end && $status !== 'extended') {
+                return 'closed';
+            }
         }
     }
 
@@ -751,18 +757,56 @@ function get_deadline(string $schoolYear, string $semester, string $gradingPerio
 
 function set_deadline(string $schoolYear, string $semester, string $gradingPeriod, ?string $startDate, ?string $endDate, string $status, ?string $extendedUntil = null): bool {
     $conn = db_connect();
-    if (!$conn) return false;
+    if (!$conn) {
+        error_log('set_deadline: db_connect failed');
+        return false;
+    }
 
+    $ok = false;
     $schoolYear = normalize_school_year($schoolYear);
     $semester = normalize_semester($semester);
     $gradingPeriod = strtolower(trim($gradingPeriod));
+    if ($schoolYear === '' || $semester === '') {
+        error_log('set_deadline: invalid school_year or semester');
+        $conn->close();
+        return false;
+    }
     if (!in_array($gradingPeriod, ['prelim', 'midterm', 'finals'], true)) {
+        error_log('set_deadline: invalid grading_period ' . $gradingPeriod);
+        $conn->close();
+        return false;
+    }
+    if (!in_array($status, ['open', 'closed', 'extended'], true)) {
+        error_log('set_deadline: invalid status ' . $status);
         $conn->close();
         return false;
     }
 
+    if ($startDate && $endDate && strtotime($startDate) >= strtotime($endDate)) {
+        error_log('set_deadline: start_date >= end_date');
+        $conn->close();
+        return false;
+    }
+
+    if ($status === 'extended') {
+        if (!$extendedUntil) {
+            error_log('set_deadline: extended status without extendedUntil');
+            $conn->close();
+            return false;
+        }
+        if ($endDate && strtotime($extendedUntil) <= strtotime($endDate)) {
+            error_log('set_deadline: extendedUntil <= endDate');
+            $conn->close();
+            return false;
+        }
+    }
+
     $check = $conn->prepare("SELECT id FROM submission_deadlines WHERE school_year = ? AND semester = ? AND grading_period = ? LIMIT 1");
-    if (!$check) { $conn->close(); return false; }
+    if (!$check) {
+        error_log('set_deadline: check prepare failed: ' . $conn->error);
+        $conn->close();
+        return false;
+    }
     $check->bind_param('sss', $schoolYear, $semester, $gradingPeriod);
     $check->execute();
     $res = $check->get_result();
@@ -772,16 +816,30 @@ function set_deadline(string $schoolYear, string $semester, string $gradingPerio
     if ($exists) {
         $stmt = $conn->prepare("UPDATE submission_deadlines SET start_date = ?, end_date = ?, status = ?, extended_until = ?, updated_at = NOW()
             WHERE school_year = ? AND semester = ? AND grading_period = ?");
-        if (!$stmt) { $conn->close(); return false; }
+        if (!$stmt) {
+            error_log('set_deadline: update prepare failed: ' . $conn->error);
+            $conn->close();
+            return false;
+        }
         $stmt->bind_param('sssssss', $startDate, $endDate, $status, $extendedUntil, $schoolYear, $semester, $gradingPeriod);
         $ok = $stmt->execute();
+        if (!$ok) {
+            error_log('set_deadline: update execute failed: ' . $stmt->error);
+        }
         $stmt->close();
     } else {
         $stmt = $conn->prepare("INSERT INTO submission_deadlines (school_year, semester, grading_period, start_date, end_date, status, extended_until, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
-        if (!$stmt) { $conn->close(); return false; }
+        if (!$stmt) {
+            error_log('set_deadline: insert prepare failed: ' . $conn->error);
+            $conn->close();
+            return false;
+        }
         $stmt->bind_param('sssssss', $schoolYear, $semester, $gradingPeriod, $startDate, $endDate, $status, $extendedUntil);
         $ok = $stmt->execute();
+        if (!$ok) {
+            error_log('set_deadline: insert execute failed: ' . $stmt->error . ' | data: sy=' . $schoolYear . ' sem=' . $semester . ' period=' . $gradingPeriod . ' start=' . $startDate . ' end=' . $endDate . ' status=' . $status . ' ext=' . $extendedUntil);
+        }
         $stmt->close();
     }
 
@@ -823,15 +881,48 @@ function is_period_open_for_teacher(int $teacherId, string $schoolYear, string $
     $stmt->close();
     $conn->close();
 
-    if ($hasGrant) return true;
+    // If explicitly granted, still enforce schedule time window.
+    // (Some flows may bypass deadline status computation.)
+    $deadline = get_deadline($schoolYear, $semester, $gradingPeriod);
+    if (!$deadline) {
+        // No deadline set - allow grade input for initial setup
+        // If no permission grant, still check if teacher already submitted
+        return !$hasGrant ? !has_teacher_submitted_grades($teacherId, $schoolYear, $semester, $gradingPeriod) : true;
+    }
 
-    $status = get_deadline_status($schoolYear, $semester, $gradingPeriod);
-    if ($status === 'open' || $status === 'extended') {
+    $now = new DateTime();
+    $startAllowed = true;
+    if (!empty($deadline['start_date'])) {
+        $startDt = new DateTime($deadline['start_date']);
+        // Allow only after start time
+        $startAllowed = $now >= $startDt;
+    }
+
+    if ($deadline['status'] === 'extended') {
+        if (empty($deadline['extended_until'])) {
+            return false;
+        }
+        if (!$startAllowed) return false;
+        $extDt = new DateTime($deadline['extended_until']);
+        if ($now > $extDt) return false;
+    } elseif ($deadline['status'] === 'open') {
+        if (!$startAllowed) return false;
+        if (empty($deadline['end_date'])) return false;
+        $endDt = new DateTime($deadline['end_date']);
+        if ($now > $endDt) return false;
+    } else {
+        // closed
+        return false;
+    }
+
+    // If no permission grant, also block after teacher has already submitted.
+    if (!$hasGrant) {
         return !has_teacher_submitted_grades($teacherId, $schoolYear, $semester, $gradingPeriod);
     }
 
-    return false;
+    return true;
 }
+
 
 function create_notification(int $userId, string $userRole, string $title, string $message, string $type = 'info', ?string $link = null): bool {
     $conn = db_connect();
@@ -1054,19 +1145,52 @@ function update_teacher(int $teacherId, string $firstName, ?string $middleName, 
     return (bool)$ok;
 }
 
-function delete_teacher(int $teacherId): bool {
+function delete_teacher(int $teacherId): array {
     $conn = db_connect();
-    if (!$conn) return false;
+    if (!$conn) return ['success' => false, 'error' => 'Database connection failed.'];
 
-    $stmt = $conn->prepare("DELETE FROM teachers WHERE id = ?");
-    if (!$stmt) { $conn->close(); return false; }
+    $conn->begin_transaction();
+    try {
+        $delAssign = $conn->prepare("DELETE FROM assignments WHERE teacher_id = ?");
+        if ($delAssign) {
+            $delAssign->bind_param('i', $teacherId);
+            $delAssign->execute();
+            $delAssign->close();
+        }
 
-    $stmt->bind_param('i', $teacherId);
-    $ok = $stmt->execute();
-    $stmt->close();
-    $conn->close();
+        $delGc = $conn->prepare("DELETE FROM grade_change_requests WHERE teacher_id = ?");
+        if ($delGc) {
+            $delGc->bind_param('i', $teacherId);
+            $delGc->execute();
+            $delGc->close();
+        }
 
-    return (bool)$ok;
+        $delGrades = $conn->prepare("UPDATE grades SET teacher_id = NULL WHERE teacher_id = ?");
+        if ($delGrades) {
+            $delGrades->bind_param('i', $teacherId);
+            $delGrades->execute();
+            $delGrades->close();
+        }
+
+        $stmt = $conn->prepare("DELETE FROM teachers WHERE id = ?");
+        if (!$stmt) throw new Exception('Prepare failed: ' . $conn->error);
+        $stmt->bind_param('i', $teacherId);
+        $ok = $stmt->execute();
+        $stmt->close();
+
+        if (!$ok) throw new Exception($conn->error);
+
+        $conn->commit();
+        $conn->close();
+        return ['success' => true];
+    } catch (Exception $e) {
+        $conn->rollback();
+        $conn->close();
+        if (strpos($e->getMessage(), 'foreign key constraint') !== false || strpos($e->getMessage(), 'Cannot delete') !== false) {
+            return ['success' => false, 'error' => 'Cannot delete this teacher because they have existing assignments or grade records. Remove their assignments first.'];
+        }
+        return ['success' => false, 'error' => 'Delete failed: ' . $e->getMessage()];
+    }
 }
 
 function create_student(string $firstName, ?string $middleName, string $lastName, ?int $sectionId, ?string $department): array {
@@ -1293,6 +1417,11 @@ function save_grade_viewing_schedule(string $schoolYear, string $semester, strin
     $conn = db_connect();
     if (!$conn) return null;
 
+    if (strtotime($startDate) >= strtotime($endDate)) {
+        $conn->close();
+        return null;
+    }
+
     $check = $conn->prepare("SELECT id FROM grade_viewing_schedules WHERE school_year = ? AND semester = ? LIMIT 1");
     if (!$check) { $conn->close(); return null; }
     $check->bind_param('ss', $schoolYear, $semester);
@@ -1321,7 +1450,7 @@ function save_grade_viewing_schedule(string $schoolYear, string $semester, strin
     }
 
     $conn->close();
-    return (bool)$ok ? 0 : null;
+    return (bool)$ok ? 1 : null;
 }
 
 function toggle_grade_viewing_schedule(int $id, bool $isActive): bool {
@@ -1329,6 +1458,133 @@ function toggle_grade_viewing_schedule(int $id, bool $isActive): bool {
     if (!$conn) return false;
 
     $stmt = $conn->prepare("UPDATE grade_viewing_schedules SET is_active = ?, updated_at = NOW() WHERE id = ?");
+    if (!$stmt) { $conn->close(); return false; }
+    $isActiveInt = $isActive ? 1 : 0;
+    $stmt->bind_param('ii', $isActiveInt, $id);
+    $ok = $stmt->execute();
+    $stmt->close();
+    $conn->close();
+    return (bool)$ok;
+}
+
+function get_request_schedules(string $schoolYear = '', string $semester = ''): array {
+    $conn = db_connect();
+    if (!$conn) return [];
+
+    $sql = "SELECT id, school_year, semester, start_date, end_date, is_active, created_at, updated_at FROM grade_request_schedules WHERE 1=1";
+    $params = '';
+    $vals = [];
+
+    if ($schoolYear) {
+        $sql .= " AND school_year = ?";
+        $params .= 's';
+        $vals[] = $schoolYear;
+    }
+    if ($semester) {
+        $sql .= " AND semester = ?";
+        $params .= 's';
+        $vals[] = $semester;
+    }
+
+    $sql .= " ORDER BY school_year DESC, semester DESC";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) { $conn->close(); return []; }
+    if ($params) {
+        $stmt->bind_param($params, ...$vals);
+    }
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $rows = [];
+    while ($r = $res->fetch_assoc()) $rows[] = $r;
+    $stmt->close();
+    $conn->close();
+    return $rows;
+}
+
+function get_request_schedule(string $schoolYear, string $semester): ?array {
+    $conn = db_connect();
+    if (!$conn) return null;
+
+    $stmt = $conn->prepare("SELECT id, school_year, semester, start_date, end_date, is_active, created_at, updated_at FROM grade_request_schedules WHERE school_year = ? AND semester = ? LIMIT 1");
+    if (!$stmt) { $conn->close(); return null; }
+
+    $stmt->bind_param('ss', $schoolYear, $semester);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $row = $res ? $res->fetch_assoc() : null;
+    $stmt->close();
+    $conn->close();
+    return $row ?: null;
+}
+
+function is_request_submission_active(string $schoolYear, string $semester): bool {
+    $conn = db_connect();
+    if (!$conn) return false;
+
+    $stmt = $conn->prepare("SELECT id, start_date, end_date, is_active FROM grade_request_schedules WHERE school_year = ? AND semester = ? AND is_active = 1 LIMIT 1");
+    if (!$stmt) { $conn->close(); return false; }
+
+    $stmt->bind_param('ss', $schoolYear, $semester);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $row = $res ? $res->fetch_assoc() : null;
+    $stmt->close();
+    $conn->close();
+
+    if (!$row) return false;
+
+    $now = new DateTime();
+    $start = new DateTime($row['start_date']);
+    $end = new DateTime($row['end_date']);
+    return $now >= $start && $now <= $end;
+}
+
+function save_request_schedule(string $schoolYear, string $semester, string $startDate, string $endDate, bool $isActive): ?int {
+    $conn = db_connect();
+    if (!$conn) return null;
+
+    if (strtotime($startDate) >= strtotime($endDate)) {
+        $conn->close();
+        return null;
+    }
+
+    $check = $conn->prepare("SELECT id FROM grade_request_schedules WHERE school_year = ? AND semester = ? LIMIT 1");
+    if (!$check) { $conn->close(); return null; }
+    $check->bind_param('ss', $schoolYear, $semester);
+    $check->execute();
+    $res = $check->get_result();
+    $exists = $res && $res->fetch_assoc();
+    $check->close();
+
+    if ($exists) {
+        $stmt = $conn->prepare("UPDATE grade_request_schedules SET start_date = ?, end_date = ?, is_active = ?, updated_at = NOW() WHERE school_year = ? AND semester = ?");
+        if (!$stmt) { $conn->close(); return null; }
+        $isActiveInt = $isActive ? 1 : 0;
+        $stmt->bind_param('ssiss', $startDate, $endDate, $isActiveInt, $schoolYear, $semester);
+        $ok = $stmt->execute();
+        $stmt->close();
+    } else {
+        $stmt = $conn->prepare("INSERT INTO grade_request_schedules (school_year, semester, start_date, end_date, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())");
+        if (!$stmt) { $conn->close(); return null; }
+        $isActiveInt = $isActive ? 1 : 0;
+        $stmt->bind_param('ssssi', $schoolYear, $semester, $startDate, $endDate, $isActiveInt);
+        $ok = $stmt->execute();
+        $insertId = $conn->insert_id;
+        $stmt->close();
+        $conn->close();
+        return $ok ? $insertId : null;
+    }
+
+    $conn->close();
+    return (bool)$ok ? 1 : null;
+}
+
+function toggle_request_schedule(int $id, bool $isActive): bool {
+    $conn = db_connect();
+    if (!$conn) return false;
+
+    $stmt = $conn->prepare("UPDATE grade_request_schedules SET is_active = ?, updated_at = NOW() WHERE id = ?");
     if (!$stmt) { $conn->close(); return false; }
     $isActiveInt = $isActive ? 1 : 0;
     $stmt->bind_param('ii', $isActiveInt, $id);

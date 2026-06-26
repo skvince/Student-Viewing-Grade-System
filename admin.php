@@ -35,11 +35,9 @@ if ($conn) {
         $res = $stmt->get_result();
         $totalAssignments = (int)($res->fetch_assoc()['count'] ?? 0);
         $stmt->close();
+    }
 
-    $totalTeachers = (int) $conn->query("SELECT COUNT(*) AS count FROM teachers")->fetch_assoc()['count'];
-    $totalStudents = (int) $conn->query("SELECT COUNT(*) AS count FROM students")->fetch_assoc()['count'];
-    $totalAssignments = (int) $conn->query("SELECT COUNT(*) AS count FROM assignments WHERE school_year = '" . $conn->real_escape_string($selectedYear) . "' AND semester = '" . $conn->real_escape_string($selectedSem) . "'")->fetch_assoc()['count'];
-    $res = $conn->query(
+    $resRecent = $conn->query(
         "SELECT " .
         "  a.module, a.school_year, a.semester, " .
         "  TRIM(CONCAT(t.first_name, ' ', IF(t.middle_name <> '', CONCAT(t.middle_name, ' '), ''), t.last_name)) AS teacher_name, " .
@@ -50,15 +48,16 @@ if ($conn) {
         "WHERE a.school_year = '" . $conn->real_escape_string($selectedYear) . "' AND a.semester = '" . $conn->real_escape_string($selectedSem) . "' " .
         "ORDER BY a.created_at DESC LIMIT 10"
     );
-    if ($res) {
-        while ($row = $res->fetch_assoc()) {
+    if ($resRecent) {
+        while ($row = $resRecent->fetch_assoc()) {
             $recentAssignments[] = $row;
         }
-        $res->free();
-
+        $resRecent->free();
     }
+
     $conn->close();
 }
+
 
 $studentStatsByDept = get_department_student_stats($selectedYear, $selectedSem);
 $teacherStatsByDept = get_department_teacher_stats($selectedYear, $selectedSem);
@@ -95,10 +94,6 @@ foreach ($teacherStatsByDept as $st) $overallTeacherTotal += (int)($st['total_te
           </div>
         </div>
       </div>
-
-      <?php
-      $upcomingDeadlines = get_upcoming_deadlines($selectedYear, $selectedSem, 5);
-      ?>
 
       <div class="stats-grid">
         <div class="panel-block">

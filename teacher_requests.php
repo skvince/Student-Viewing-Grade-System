@@ -4,13 +4,8 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'teacher') {
-    if (isset($_GET['teacher_id'])) {
-        $_SESSION['user_role'] = 'teacher';
-        $_SESSION['user_id'] = intval($_GET['teacher_id']);
-    } else {
-        header('Location: login.php');
-        exit;
-    }
+    header('Location: login.php');
+    exit;
 }
 
 $userId = intval($_SESSION['user_id']);
@@ -90,8 +85,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $reqSubjectId = intval($_POST['request_subject_id'] ?? 0);
     $reqPeriod = strtolower(trim($_POST['request_period'] ?? ''));
     $reqReason = trim($_POST['request_reason'] ?? '');
+    $reqScope = strtolower(trim($_POST['request_scope'] ?? 'single'));
 
-    if (in_array($reqPeriod, ['prelim', 'midterm', 'finals'], true) && $reqReason !== '' && $reqSectionId && $reqSubjectId) {
+    $scopeLabel = 'Single subject';
+    if ($reqScope === 'section_all') {
+        $scopeLabel = 'All subjects in this section';
+        if ($reqSectionId && !empty($sections[$reqSectionId])) {
+            $reqReason = trim(($reqReason ? $reqReason . ' — ' : '') . 'Scope: ' . $scopeLabel . ' (' . htmlspecialchars($sections[$reqSectionId]['code'] ?? $sections[$reqSectionId]['name']) . ')');
+        }
+        $reqSubjectId = 0;
+    } elseif ($reqScope === 'all') {
+        $scopeLabel = 'All subjects across all my sections';
+        $reqReason = trim(($reqReason ? $reqReason . ' — ' : '') . 'Scope: ' . $scopeLabel);
+        $reqSectionId = 0;
+        $reqSubjectId = 0;
+    }
+
+    if (in_array($reqPeriod, ['prelim', 'midterm', 'finals'], true) && $reqReason !== '' && ($reqScope === 'single' ? ($reqSectionId && $reqSubjectId) : true)) {
         $conn2 = db_connect();
         if ($conn2) {
             $ok = save_grade_change_request($userId, $reqSectionId, $reqSubjectId, $schoolYear, $semester, $reqPeriod, $reqReason);
@@ -103,7 +113,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (!$saveError) {
-        header('Location: ' . $_SERVER['PHP_SELF'] . '?global_year=' . urlencode($schoolYear) . '&global_sem=' . urlencode($semester));
+        // Redirect to the same page to prevent resubmission, preserving the school year and semester parameters.
+        header('Location: ' . $_SERVER['PHP_SELF'] . '?view=requests&global_year=' . urlencode($schoolYear) . '&global_sem=' . urlencode($semester) . '&success=1');
         exit;
     }
 }
@@ -175,6 +186,20 @@ ob_start();
                 </select>
             </div>
             <div class="form-group">
+                <label>Request Scope</label>
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                        <input type="radio" name="request_scope" value="single" checked style="width:auto;" /> Single subject
+                    </label>
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                        <input type="radio" name="request_scope" value="section_all" style="width:auto;" /> All subjects in this section
+                    </label>
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                        <input type="radio" name="request_scope" value="all" style="width:auto;" /> All subjects across all my sections
+                    </label>
+                </div>
+            </div>
+            <div class="form-group" id="section-group">
                 <label for="request-section">Section</label>
                 <select name="request_section_id" id="request-section" class="form-control" required>
                     <option value="">Select section...</option>
@@ -183,9 +208,9 @@ ob_start();
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="form-group">
+            <div class="form-group" id="subject-group">
                 <label for="request-subject">Subject</label>
-                <select name="request_subject_id" id="request-subject" class="form-control" required>
+                <select name="request_subject_id" id="request-subject" class="form-control">
                     <?php if (!empty($sections) && isset($sections[$activeSectionId]['subjects'])): foreach ($sections[$activeSectionId]['subjects'] as $subj): ?>
                         <option value="<?php echo (int)$subj['subject_id']; ?>" <?php echo $activeSubjectId===(int)$subj['subject_id']?'selected':''; ?>><?php echo htmlspecialchars($subj['code'] . ' - ' . $subj['title']); ?></option>
                     <?php endforeach; endif; ?>
@@ -220,6 +245,12 @@ ob_start();
             subjectSelect.innerHTML = '<option value="">Select subject</option>';
             subjectSelect.value = '';
         }
+        const scopeRadios = document.querySelectorAll('input[name="request_scope"]');
+        scopeRadios.forEach(function(radio) {
+            if (radio.value === 'single') radio.checked = true;
+            else radio.checked = false;
+        });
+        applyRequestScope();
     }
 
     function closeRequestModal() {
@@ -268,6 +299,40 @@ ob_start();
         }
     }
 
+    function applyRequestScope() {
+        const scopeRadios = document.querySelectorAll('input[name="request_scope"]');
+        const sectionGroup = document.getElementById('section-group');
+        const subjectGroup = document.getElementById('subject-group');
+        const sectionSelect = document.querySelector('select[name="request_section_id"]');
+        const subjectSelect = document.querySelector('select[name="request_subject_id"]');
+        if (!sectionGroup || !subjectGroup || !sectionSelect || !subjectSelect) return;
+
+        let selectedScope = 'single';
+        scopeRadios.forEach(function(radio) {
+            if (radio.checked) selectedScope = radio.value;
+        });
+
+        if (selectedScope === 'all') {
+            sectionGroup.style.display = 'none';
+            sectionSelect.required = false;
+            sectionSelect.value = '';
+            subjectGroup.style.display = 'none';
+            subjectSelect.required = false;
+            subjectSelect.value = '';
+        } else if (selectedScope === 'section_all') {
+            sectionGroup.style.display = '';
+            sectionSelect.required = true;
+            subjectGroup.style.display = 'none';
+            subjectSelect.required = false;
+            subjectSelect.value = '';
+        } else {
+            sectionGroup.style.display = '';
+            sectionSelect.required = true;
+            subjectGroup.style.display = '';
+            subjectSelect.required = true;
+        }
+    }
+
     function filterRequests() {
         if (!requestSearchInput) return;
         const query = requestSearchInput.value.toLowerCase();
@@ -286,35 +351,33 @@ ob_start();
         });
     }
 
-    document.addEventListener('DOMContentLoaded', function () {
-        if (btnNewRequest) {
-            btnNewRequest.addEventListener('click', openRequestModal);
-        }
-        if (btnCloseRequestModal) {
-            btnCloseRequestModal.addEventListener('click', closeRequestModal);
-        }
-        if (btnCancelRequest) {
-            btnCancelRequest.addEventListener('click', closeRequestModal);
-        }
-        if (requestModalBackdrop) {
-            requestModalBackdrop.addEventListener('click', function(e) {
-                if (e.target === requestModalBackdrop) closeRequestModal();
-            });
-        }
+    if (btnNewRequest) btnNewRequest.addEventListener('click', openRequestModal);
+    if (btnCloseRequestModal) btnCloseRequestModal.addEventListener('click', closeRequestModal);
+    if (btnCancelRequest) btnCancelRequest.addEventListener('click', closeRequestModal);
+    if (requestSearchInput) requestSearchInput.addEventListener('input', filterRequests);
 
-        const sectionSelect = document.querySelector('select[name="request_section_id"]');
-        if (sectionSelect) {
-            sectionSelect.addEventListener('change', updateRequestSubjects);
-            updateRequestSubjects();
-        }
+    const sectionSelect = document.querySelector('select[name="request_section_id"]');
+    if (sectionSelect) sectionSelect.addEventListener('change', updateRequestSubjects);
 
-        if (requestSearchInput) {
-            requestSearchInput.addEventListener('input', filterRequests);
-        }
+    const scopeRadios = document.querySelectorAll('input[name="request_scope"]');
+    scopeRadios.forEach(function(radio) {
+        radio.addEventListener('change', applyRequestScope);
     });
 </script>
+
 <?php
 $requestsContent = ob_get_clean();
 $activeNav = 'requests';
 require_once __DIR__ . '/inc/teacher_layout.php';
 ?>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    <?php if ($saveError): ?>
+      showError('<?php echo addslashes(htmlspecialchars($saveError)); ?>');
+    <?php endif; ?>
+    <?php if (isset($_GET['success'])): ?>
+      showAlert('success', 'Success', 'Your request was submitted successfully.');
+    <?php endif; ?>
+  });
+</script>

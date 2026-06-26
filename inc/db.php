@@ -8,11 +8,9 @@ function db_connect(): ?mysqli {
     $user = 'root';
     $pass = '';
     $db   = 'student_viewing';
-    // Disable mysqli exceptions and try to connect; if database doesn't exist, create it.
     mysqli_report(MYSQLI_REPORT_OFF);
     $conn = @new mysqli($host, $user, $pass, $db);
     if ($conn->connect_errno) {
-        // 1049 = Unknown database
         if ($conn->connect_errno === 1049) {
             $tmp = @new mysqli($host, $user, $pass);
             if ($tmp->connect_errno) {
@@ -26,7 +24,6 @@ function db_connect(): ?mysqli {
                 return null;
             }
             $tmp->close();
-            // try reconnect to the newly created database
             $conn = @new mysqli($host, $user, $pass, $db);
             if ($conn->connect_errno) {
                 error_log('DB connect error after create: ' . $conn->connect_error);
@@ -282,38 +279,59 @@ SQL,
         $conn->query('ALTER TABLE audit_logs ' . implode(', ', $auditAlters));
     }
 
-    $dlCheck = $conn->query("SHOW TABLES LIKE 'submission_deadlines'");
-    if (!$dlCheck || $dlCheck->num_rows === 0) {
-        $conn->query("CREATE TABLE IF NOT EXISTS submission_deadlines (
-          id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-          school_year VARCHAR(20) NOT NULL,
-          semester VARCHAR(20) NOT NULL,
-          grading_period ENUM('prelim','midterm','finals') NOT NULL,
-          start_date DATETIME NOT NULL,
-          end_date DATETIME NOT NULL,
-          status ENUM('open','closed','extended') NOT NULL DEFAULT 'open',
-          extended_until DATETIME DEFAULT NULL,
-          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-          UNIQUE KEY uniq_deadline (school_year, semester, grading_period)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-    } else {
-        $startDateCheck = $conn->query("SHOW COLUMNS FROM submission_deadlines WHERE Field = 'start_date'");
-        if (!$startDateCheck || $startDateCheck->num_rows === 0) {
-            $conn->query("ALTER TABLE submission_deadlines ADD COLUMN start_date DATETIME NOT NULL AFTER grading_period");
-        }
-        if ($startDateCheck) $startDateCheck->free();
-        $endDateCheck = $conn->query("SHOW COLUMNS FROM submission_deadlines WHERE Field = 'end_date'");
-        if (!$endDateCheck || $endDateCheck->num_rows === 0) {
-            $conn->query("ALTER TABLE submission_deadlines ADD COLUMN end_date DATETIME NOT NULL AFTER start_date");
-        }
-        if ($endDateCheck) $endDateCheck->free();
-        $deadlineCheck = $conn->query("SHOW COLUMNS FROM submission_deadlines WHERE Field = 'deadline'");
-        if ($deadlineCheck && $deadlineCheck->num_rows > 0) {
-            $conn->query("ALTER TABLE submission_deadlines DROP COLUMN deadline");
-        }
-        if ($deadlineCheck) $deadlineCheck->free();
-    }
+$dlCheck = $conn->query("SHOW TABLES LIKE 'submission_deadlines'");
+     if (!$dlCheck || $dlCheck->num_rows === 0) {
+         $conn->query("CREATE TABLE IF NOT EXISTS submission_deadlines (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            school_year VARCHAR(20) NOT NULL,
+            semester VARCHAR(20) NOT NULL,
+            grading_period ENUM('prelim','midterm','finals') NOT NULL,
+            start_date DATETIME DEFAULT NULL,
+            end_date DATETIME DEFAULT NULL,
+            status ENUM('open','closed','extended') NOT NULL DEFAULT 'open',
+            extended_until DATETIME DEFAULT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_deadline (school_year, semester, grading_period)
+          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+     } else {
+         $startDateCheck = $conn->query("SHOW COLUMNS FROM submission_deadlines WHERE Field = 'start_date'");
+         if ($startDateCheck && $startDateCheck->num_rows === 0) {
+             $conn->query("ALTER TABLE submission_deadlines ADD COLUMN start_date DATETIME DEFAULT NULL");
+         } elseif ($startDateCheck && $startDateCheck->num_rows > 0) {
+             $conn->query("ALTER TABLE submission_deadlines MODIFY COLUMN start_date DATETIME DEFAULT NULL");
+         }
+         if ($startDateCheck) $startDateCheck->free();
+         $endDateCheck = $conn->query("SHOW COLUMNS FROM submission_deadlines WHERE Field = 'end_date'");
+         if ($endDateCheck && $endDateCheck->num_rows === 0) {
+             $conn->query("ALTER TABLE submission_deadlines ADD COLUMN end_date DATETIME DEFAULT NULL");
+         } elseif ($endDateCheck && $endDateCheck->num_rows > 0) {
+             $conn->query("ALTER TABLE submission_deadlines MODIFY COLUMN end_date DATETIME DEFAULT NULL");
+         }
+         if ($endDateCheck) $endDateCheck->free();
+         $statusCheck = $conn->query("SHOW COLUMNS FROM submission_deadlines WHERE Field = 'status'");
+         if ($statusCheck && $statusCheck->num_rows === 0) {
+             $conn->query("ALTER TABLE submission_deadlines ADD COLUMN status ENUM('open','closed','extended') NOT NULL DEFAULT 'open'");
+         } elseif ($statusCheck && $statusCheck->num_rows > 0) {
+             $conn->query("ALTER TABLE submission_deadlines MODIFY COLUMN status ENUM('open','closed','extended') NOT NULL DEFAULT 'open'");
+         }
+         if ($statusCheck) $statusCheck->free();
+         $extendedCheck = $conn->query("SHOW COLUMNS FROM submission_deadlines WHERE Field = 'extended_until'");
+         if ($extendedCheck && $extendedCheck->num_rows === 0) {
+             $conn->query("ALTER TABLE submission_deadlines ADD COLUMN extended_until DATETIME DEFAULT NULL");
+         }
+         if ($extendedCheck) $extendedCheck->free();
+         $deadlineCheck = $conn->query("SHOW COLUMNS FROM submission_deadlines WHERE Field = 'deadline'");
+         if ($deadlineCheck && $deadlineCheck->num_rows > 0) {
+             $conn->query("ALTER TABLE submission_deadlines DROP COLUMN deadline");
+         }
+         if ($deadlineCheck) $deadlineCheck->free();
+         $idxCheck = $conn->query("SHOW INDEX FROM submission_deadlines WHERE Key_name = 'uniq_deadline'");
+         if ($idxCheck && $idxCheck->num_rows === 0) {
+             $conn->query("ALTER TABLE submission_deadlines ADD UNIQUE KEY uniq_deadline (school_year, semester, grading_period)");
+         }
+         if ($idxCheck) $idxCheck->free();
+     }
     if ($dlCheck) $dlCheck->free();
 
     $reqCheck = $conn->query("SHOW TABLES LIKE 'grade_change_requests'");
@@ -421,6 +439,22 @@ SQL,
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     }
     if ($accessReqCheck) $accessReqCheck->free();
+
+    $reqSchedCheck = $conn->query("SHOW TABLES LIKE 'grade_request_schedules'");
+    if (!$reqSchedCheck || $reqSchedCheck->num_rows === 0) {
+        $conn->query("CREATE TABLE IF NOT EXISTS grade_request_schedules (
+          id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          school_year VARCHAR(20) NOT NULL,
+          semester VARCHAR(20) NOT NULL,
+          start_date DATETIME NOT NULL,
+          end_date DATETIME NOT NULL,
+          is_active TINYINT(1) NOT NULL DEFAULT 1,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          UNIQUE KEY uniq_req_schedule (school_year, semester)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    }
+    if ($reqSchedCheck) $reqSchedCheck->free();
 
     $teacherPicCheck = $conn->query("SHOW COLUMNS FROM teachers WHERE Field = 'profile_picture'");
     if (!$teacherPicCheck || $teacherPicCheck->num_rows === 0) {
