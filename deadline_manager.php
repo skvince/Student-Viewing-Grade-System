@@ -647,8 +647,8 @@ foreach ($deadlines as $d) {
             Academic Year:
           </label>
           <select id="global-filter-year" class="global-select">
-            <option value="2025-2026" <?php echo $selectedYear==='2025-2026'?'selected':''; ?>>2025–2026</option>
-            <option value="2026-2027" <?php echo $selectedYear==='2026-2027'?'selected':''; ?>>2026–2027</option>
+            <option value="2025-2026" <?php echo $selectedYear==='2025-2026'?'selected':''; ?>>2025-2026</option>
+            <option value="2026-2027" <?php echo $selectedYear==='2026-2027'?'selected':''; ?>>2026-2027</option>
           </select>
         </div>
 
