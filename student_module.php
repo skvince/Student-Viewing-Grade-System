@@ -4,14 +4,10 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'student') {
-    if (isset($_GET['student_id'])) {
-        $_SESSION['user_role'] = 'student';
-        $_SESSION['user_id'] = intval($_GET['student_id']);
-    } else {
-        header('Location: login.php');
-        exit;
-    }
+    header('Location: login.php');
+    exit;
 }
+
 $userId = intval($_SESSION['user_id']);
 $userName = '';
 $studentSectionId = 0;
@@ -35,19 +31,20 @@ $term = get_global_term();
 $filterYear = $term['year'];
 $filterSem  = $term['semester'];
 
-// Keep student term consistent with the global filter.
-$_SESSION['student_filter_year'] = $filterYear;
-$_SESSION['student_filter_sem']  = $filterSem;
+$selectedYear = $filterYear;
+$selectedSem  = $filterSem;
 
+$viewingActive = is_grade_viewing_active($selectedYear, $selectedSem);
+$studentAccess = check_student_grade_access($userId, $selectedYear, $selectedSem);
+$canViewGrades = $viewingActive || $studentAccess;
+
+revoke_expired_access_grants();
 
 $validPairs = get_student_valid_terms($userId);
 $allTerms = get_available_terms($userId, 'student');
 $defaultYearOptions = get_term_options()['years'];
 $yearOptions = $allTerms['years'] ?: $defaultYearOptions;
 $yearOptions = array_values(array_unique(array_merge($yearOptions, $defaultYearOptions)));
-
-$selectedYear = $filterYear;
-$selectedSem  = $filterSem;
 
 if (!$selectedYear) $selectedYear = $yearOptions[0] ?? '2025-2026';
 if (!$selectedSem) $selectedSem = '1st Semester';
@@ -86,15 +83,15 @@ foreach ($assignedSubjects as $subj) {
     }
 
     $displayRows[] = [
-        'subject_code' => $subjectCode,
+        'subject_code'  => $subjectCode,
         'subject_title' => $subj['title'] ?? ($gradeMatch['subject_title'] ?? ''),
-        'units' => $subj['units'] ?? ($gradeMatch['units'] ?? 3),
-        'prelim' => $gradeMatch['prelim'] ?? null,
-        'midterm' => $gradeMatch['midterm'] ?? null,
-        'finals' => $gradeMatch['finals'] ?? null,
-        'average' => (isset($gradeMatch['prelim'], $gradeMatch['midterm'], $gradeMatch['finals']) && $gradeMatch['prelim'] !== null && $gradeMatch['midterm'] !== null && $gradeMatch['finals'] !== null) ? ($gradeMatch['average'] ?? null) : null,
-        'gwa' => (isset($gradeMatch['prelim'], $gradeMatch['midterm'], $gradeMatch['finals']) && $gradeMatch['prelim'] !== null && $gradeMatch['midterm'] !== null && $gradeMatch['finals'] !== null) ? ($gradeMatch['gwa'] ?? null) : null,
-        'remarks' => (isset($gradeMatch['prelim'], $gradeMatch['midterm'], $gradeMatch['finals']) && $gradeMatch['prelim'] !== null && $gradeMatch['midterm'] !== null && $gradeMatch['finals'] !== null) ? ($gradeMatch['remarks'] ?? null) : null,
+        'units'         => $subj['units'] ?? ($gradeMatch['units'] ?? 3),
+        'prelim'        => $gradeMatch['prelim'] ?? null,
+        'midterm'       => $gradeMatch['midterm'] ?? null,
+        'finals'        => $gradeMatch['finals'] ?? null,
+        'average'       => (isset($gradeMatch['prelim'], $gradeMatch['midterm'], $gradeMatch['finals']) && $gradeMatch['prelim'] !== null && $gradeMatch['midterm'] !== null && $gradeMatch['finals'] !== null) ? ($gradeMatch['average'] ?? null) : null,
+        'gwa'           => (isset($gradeMatch['prelim'], $gradeMatch['midterm'], $gradeMatch['finals']) && $gradeMatch['prelim'] !== null && $gradeMatch['midterm'] !== null && $gradeMatch['finals'] !== null) ? ($gradeMatch['gwa'] ?? null) : null,
+        'remarks'       => (isset($gradeMatch['prelim'], $gradeMatch['midterm'], $gradeMatch['finals']) && $gradeMatch['prelim'] !== null && $gradeMatch['midterm'] !== null && $gradeMatch['finals'] !== null) ? ($gradeMatch['remarks'] ?? null) : null,
     ];
     $seenSubjectCodes[$subjectCode] = true;
 }
@@ -104,15 +101,15 @@ foreach ($grades as $g) {
     if ($subjectCode === '' || isset($seenSubjectCodes[$subjectCode])) continue;
 
     $displayRows[] = [
-        'subject_code' => $subjectCode,
+        'subject_code'  => $subjectCode,
         'subject_title' => $g['subject_title'] ?? '',
-        'units' => $g['units'] ?? 3,
-        'prelim' => $g['prelim'] ?? null,
-        'midterm' => $g['midterm'] ?? null,
-        'finals' => $g['finals'] ?? null,
-        'average' => (isset($g['prelim'], $g['midterm'], $g['finals']) && $g['prelim'] !== null && $g['midterm'] !== null && $g['finals'] !== null) ? ($g['average'] ?? null) : null,
-        'gwa' => (isset($g['prelim'], $g['midterm'], $g['finals']) && $g['prelim'] !== null && $g['midterm'] !== null && $g['finals'] !== null) ? ($g['gwa'] ?? null) : null,
-        'remarks' => (isset($g['prelim'], $g['midterm'], $g['finals']) && $g['prelim'] !== null && $g['midterm'] !== null && $g['finals'] !== null) ? ($g['remarks'] ?? null) : null,
+        'units'         => $g['units'] ?? 3,
+        'prelim'        => $g['prelim'] ?? null,
+        'midterm'       => $g['midterm'] ?? null,
+        'finals'        => $g['finals'] ?? null,
+        'average'       => (isset($g['prelim'], $g['midterm'], $g['finals']) && $g['prelim'] !== null && $g['midterm'] !== null && $g['finals'] !== null) ? ($g['average'] ?? null) : null,
+        'gwa'           => (isset($g['prelim'], $g['midterm'], $g['finals']) && $g['prelim'] !== null && $g['midterm'] !== null && $g['finals'] !== null) ? ($g['gwa'] ?? null) : null,
+        'remarks'       => (isset($g['prelim'], $g['midterm'], $g['finals']) && $g['prelim'] !== null && $g['midterm'] !== null && $g['finals'] !== null) ? ($g['remarks'] ?? null) : null,
     ];
     $seenSubjectCodes[$subjectCode] = true;
 }
@@ -146,48 +143,145 @@ $totalAvg = $totalUnits > 0 ? $totalWeightedAvg / $totalUnits : 0;
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
 <style>
-  :root { --bg-color:#f1f4f2; --text-color:#333333; --text-muted:#666666; --primary-green:#0e4429; --light-green-bg:#d8ebd4; --card-bg:#ffffff; --border-color:#e5e7eb; --success-badge:#14532d; --success-badge-bg:#dcfce7; }
-  * { box-sizing:border-box; margin:0; padding:0; font-family:"Inter",sans-serif; }
-  body { background-color:var(--bg-color); color:var(--text-color); min-height:100vh; padding:20px 40px; }
-  .header-nav { background-color:var(--primary-green); color:#ffffff; padding:14px 24px; border-radius:8px; display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; box-shadow:0 1px 3px rgba(0,0,0,0.1); flex-wrap:wrap; gap:16px; }
-  .brand-info h1 { font-size:1rem; font-weight:700; letter-spacing:0.3px; }
-  .brand-info p { font-size:0.8rem; opacity:0.85; margin-top:2px; }
-  .user-controls { display:flex; align-items:center; gap:20px; flex-wrap:wrap; }
-  .student-profile { display:flex; align-items:center; gap:8px; font-size:0.9rem; font-weight:500; background-color:rgba(255,255,255,0.1); padding:6px 14px; border-radius:20px; }
-  .logout-btn { background-color:transparent; color:#ffffff; border:1px solid rgba(255,255,255,0.4); border-radius:6px; padding:8px 16px; font-size:0.85rem; font-weight:500; cursor:pointer; display:flex; align-items:center; gap:8px; text-decoration:none; transition:all 0.2s; }
-  .logout-btn:hover { background-color:#ffffff; color:var(--primary-green); border-color:#ffffff; }
-  .filter-card { background-color:var(--card-bg); border-radius:8px; border:1px solid var(--border-color); padding:20px; margin-bottom:24px; }
-  .filter-card legend { font-size:0.85rem; font-weight:600; color:var(--text-muted); margin-bottom:12px; }
-  .filter-group-selectors { display:flex; gap:16px; flex-wrap:wrap; }
-  .form-control { padding:8px 36px 8px 12px; border:1px solid #d1d5db; border-radius:6px; background-color:#fff; font-size:0.85rem; color:#1f2937; appearance:none; background-image:url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234b5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e"); background-repeat:no-repeat; background-position:right 12px center; background-size:14px; cursor:pointer; min-width:180px; }
-  .grades-panel-block { background-color:var(--card-bg); border-radius:8px; border:1px solid var(--border-color); padding:24px; box-shadow:0 1px 3px rgba(0,0,0,0.02); margin-bottom:24px; }
-  .grades-panel-header { margin-bottom:20px; }
-  .grades-panel-header h2 { font-size:1rem; color:var(--primary-green); font-weight:600; }
-  .grades-panel-header p { font-size:0.75rem; color:var(--text-muted); margin-top:2px; }
-  .table-responsive { width:100%; overflow-x:auto; margin-bottom:24px; }
-  .grades-table { width:100%; border-collapse:collapse; text-align:left; font-size:0.85rem; min-width:850px; }
-  .grades-table th { color:#8492a6; font-weight:600; text-transform:uppercase; font-size:0.75rem; padding:12px 8px; border-bottom:1px solid var(--border-color); }
-  .grades-table td { padding:14px 8px; color:#1f2937; border-bottom:1px solid #f3f4f6; }
-  .text-center { text-align:center; }
-  .th-center { text-align:center !important; }
-  .highlight-gwa { color:var(--primary-green); font-weight:700; }
-  .badge-passed { background-color:var(--success-badge-bg); color:var(--success-badge); padding:4px 12px; border-radius:12px; font-size:0.75rem; font-weight:600; display:inline-block; }
-  .badge-failed { background-color:#fde8e8; color:#9b1c1c; padding:4px 12px; border-radius:12px; font-size:0.75rem; font-weight:600; display:inline-block; }
-  .summary-highlights-strip { background-color:var(--light-green-bg); border-radius:6px; padding:16px 24px; display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; }
-  .metric-item-box p { font-size:0.75rem; color:#4b5563; font-weight:500; margin-bottom:4px; }
-  .metric-item-box data { font-size:1.35rem; font-weight:700; color:var(--primary-green); display:block; }
-@media (max-width:768px) { .summary-highlights-strip { grid-template-columns:repeat(2, 1fr); } }
-   @media (max-width:480px) { .summary-highlights-strip { grid-template-columns:1fr; } }
+  :root {
+    --bg-color: #f1f4f2;
+    --text-color: #333333;
+    --text-muted: #666666;
+    --primary-green: #0e4429;
+    --light-green-bg: #d8ebd4;
+    --card-bg: #ffffff;
+    --border-color: #e5e7eb;
+    --success-badge: #14532d;
+    --success-badge-bg: #dcfce7;
+    --danger-badge-bg: #fde8e8;
+    --danger-badge: #9b1c1c;
+    --warning-badge-bg: #fef3c7;
+    --warning-badge: #92400e;
+    --info-badge-bg: #dbeafe;
+    --info-badge: #1e40af;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Inter", sans-serif; }
+  body { background-color: var(--bg-color); color: var(--text-color); min-height: 100vh; padding: 20px 40px; }
+
+  /* ── Header ── */
+  .header-nav {
+    background-color: var(--primary-green);
+    color: #ffffff;
+    padding: 14px 24px;
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .brand-info h1 { font-size: 1rem; font-weight: 700; letter-spacing: 0.3px; }
+  .brand-info p  { font-size: 0.8rem; opacity: 0.85; margin-top: 2px; }
+  .user-controls { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+  .student-profile {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    background-color: rgba(255,255,255,0.1);
+    padding: 6px 14px;
+    border-radius: 20px;
+    text-decoration: none;
+    color: inherit;
+  }
+  .logout-btn {
+    background-color: transparent;
+    color: #ffffff;
+    border: 1px solid rgba(255,255,255,0.4);
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  .logout-btn:hover { background-color: #ffffff; color: var(--primary-green); border-color: #ffffff; }
+
+  /* ── Alerts ── */
+  .alert { padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; font-size: 0.85rem; }
+  .alert-success { background-color: #d1fae5; color: #065f46; }
+  .alert-error   { background-color: #fee2e2; color: #991b1b; }
+  .alert-info    { background-color: #dbeafe; color: #1e40af; }
+
+  /* ── Grades panel ── */
+  .grades-panel-block {
+    background-color: var(--card-bg);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    padding: 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    margin-bottom: 24px;
+  }
+  .grades-panel-header { margin-bottom: 16px; }
+  .grades-panel-header h2 { font-size: 1.1rem; color: var(--primary-green); font-weight: 700; }
+  .grades-panel-header p  { font-size: 0.85rem; color: var(--text-muted); margin-top: 4px; }
+
+  /* ── Table ── */
+  .table-responsive { width: 100%; overflow-x: auto; margin-bottom: 24px; }
+  .grades-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.85rem; min-width: 650px; }
+  .grades-table th {
+    color: #4b5563;
+    background-color: #f9fafb;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .grades-table td { padding: 14px 16px; color: #1f2937; border-bottom: 1px solid #f3f4f6; }
+  .grades-table .th-center  { text-align: center; }
+  .grades-table .text-center { text-align: center; }
+
+  /* ── Badges ── */
+  .badge-passed { background-color: #dcfce7; color: #14532d; padding: 4px 12px; border-radius: 50px; font-size: 0.75rem; font-weight: 700; }
+  .badge-failed { background-color: #fde8e8; color: #9b1c1c; padding: 4px 12px; border-radius: 50px; font-size: 0.75rem; font-weight: 700; }
+  .highlight-gwa { color: #0e4429; font-weight: 700; }
+
+  /* ── Summary strip ── */
+  .summary-highlights-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-color);
+  }
+  .metric-item-box { text-align: center; }
+  .metric-item-box p    { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .metric-item-box data { font-size: 1.25rem; font-weight: 700; color: var(--primary-green); }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    body { padding: 10px; }
+  }
+  @media (max-width: 480px) {
+    body { padding: 10px; }
+    .summary-highlights-strip { grid-template-columns: 1fr 1fr; }
+  }
 </style>
 </head>
 <body>
-
   <header class="header-nav">
     <div class="brand-info">
       <h1>Student — College Of St. Catherine</h1>
       <p>Quezon City</p>
     </div>
     <div class="user-controls">
+      <a href="student_settings.php" class="student-profile">
+        <i class="fa-solid fa-gear"></i> Settings
+      </a>
       <div class="student-profile">
         <i class="fa-solid fa-circle-user"></i>
         <span><?php echo htmlspecialchars($userName ?: ''); ?></span>
@@ -199,24 +293,19 @@ $totalAvg = $totalUnits > 0 ? $totalWeightedAvg / $totalUnits : 0;
   </header>
 
   <main>
-    <form action="#" method="GET" class="filter-card">
-      <fieldset style="border:none;">
-        <legend>Select Year & Semester</legend>
-        <div class="filter-group-selectors">
-          <select name="global_year" class="form-control" id="student-year-select">
-            <?php foreach ($yearOptions as $y): ?>
-              <option value="<?php echo htmlspecialchars($y); ?>" <?php echo $filterYear===$y?'selected':''; ?>><?php echo htmlspecialchars($y); ?></option>
-            <?php endforeach; ?>
-          </select>
-          <select name="global_sem" class="form-control" id="student-sem-select">
-            <?php foreach ($semOptions as $s): ?>
-              <option value="<?php echo htmlspecialchars($s); ?>" <?php echo $filterSem===$s?'selected':''; ?>><?php echo htmlspecialchars($s); ?></option>
-            <?php endforeach; ?>
-          </select>
-        </div>
-      </fieldset>
-    </form>
+    <?php if (!$canViewGrades): ?>
+      <div class="alert alert-error" style="margin-bottom:24px;">
+        <i class="fa-solid fa-lock"></i>
+        <strong>Grade viewing is currently unavailable</strong> for Academic Year
+        <?php echo htmlspecialchars($filterYear); ?> / <?php echo htmlspecialchars($filterSem); ?>.
+        The viewing period has not started.
+        <a href="student_requests.php" style="color:var(--primary-green);font-weight:600;text-decoration:underline;margin-left:8px;">
+          Request Access
+        </a>
+      </div>
+    <?php endif; ?>
 
+    <?php if ($canViewGrades): ?>
     <section class="grades-panel-block">
       <header class="grades-panel-header">
         <h2>View Subject Grades</h2>
@@ -240,16 +329,22 @@ $totalAvg = $totalUnits > 0 ? $totalWeightedAvg / $totalUnits : 0;
           </thead>
           <tbody id="student-grades-table-body">
             <?php if (empty($displayRows)): ?>
-              <tr><td colspan="9" style="text-align:center;color:#666;padding:24px;">No subjects assigned for School Year <?php echo htmlspecialchars($filterYear ?: ''); ?> / <?php echo htmlspecialchars($filterSem ?: ''); ?>.</td></tr>
+              <tr>
+                <td colspan="9" style="text-align:center;color:#666;padding:24px;">
+                  No subjects assigned for School Year
+                  <?php echo htmlspecialchars($filterYear ?: ''); ?> /
+                  <?php echo htmlspecialchars($filterSem ?: ''); ?>.
+                </td>
+              </tr>
             <?php else: ?>
               <?php foreach ($displayRows as $g): ?>
                 <tr>
                   <td><?php echo htmlspecialchars($g['subject_code'] ?? ''); ?></td>
                   <td><?php echo htmlspecialchars($g['subject_title'] ?? ''); ?></td>
                   <td class="text-center"><?php echo htmlspecialchars($g['units'] ?? 3); ?></td>
-                  <td class="text-center"><?php echo htmlspecialchars($g['prelim'] ?? '--'); ?></td>
+                  <td class="text-center"><?php echo htmlspecialchars($g['prelim']  ?? '--'); ?></td>
                   <td class="text-center"><?php echo htmlspecialchars($g['midterm'] ?? '--'); ?></td>
-                  <td class="text-center"><?php echo htmlspecialchars($g['finals'] ?? '--'); ?></td>
+                  <td class="text-center"><?php echo htmlspecialchars($g['finals']  ?? '--'); ?></td>
                   <td class="text-center"><?php echo htmlspecialchars($g['average'] ?? '--'); ?></td>
                   <td class="text-center highlight-gwa"><?php echo htmlspecialchars($g['gwa'] ?? '--'); ?></td>
                   <td style="text-align:right;padding-right:20px;">
@@ -271,37 +366,23 @@ $totalAvg = $totalUnits > 0 ? $totalWeightedAvg / $totalUnits : 0;
       <footer class="summary-highlights-strip">
         <div class="metric-item-box">
           <p>Total Registered Units</p>
-          <data value="0" id="summary-total-units"><?php echo $totalUnits; ?></data>
+          <data value="<?php echo $totalUnits; ?>"><?php echo $totalUnits; ?></data>
         </div>
         <div class="metric-item-box">
           <p>Subjects Passed</p>
-          <data value="0" id="summary-subjects-passed"><?php echo $subjectsPassed; ?></data>
+          <data value="<?php echo $subjectsPassed; ?>"><?php echo $subjectsPassed; ?></data>
         </div>
         <div class="metric-item-box">
           <p>Total GWA</p>
-          <data value="0" id="summary-total-gwa"><?php echo number_format($totalGwa, 2); ?></data>
+          <data value="<?php echo number_format($totalGwa, 2); ?>"><?php echo number_format($totalGwa, 2); ?></data>
         </div>
         <div class="metric-item-box">
           <p>Total Average</p>
-          <data value="0" id="summary-total-avg"><?php echo number_format($totalAvg, 2); ?>%</data>
+          <data value="<?php echo number_format($totalAvg, 2); ?>"><?php echo number_format($totalAvg, 2); ?>%</data>
         </div>
       </footer>
     </section>
-   </main>
-
-   <script>
-     const yearSelect = document.getElementById('student-year-select');
-     const semSelect = document.getElementById('student-sem-select');
-     const filterForm = document.querySelector('.filter-card form');
-
-     function submitFilterForm() {
-       if (filterForm) filterForm.submit();
-     }
-
-     document.addEventListener('DOMContentLoaded', function() {
-       if (yearSelect) yearSelect.addEventListener('change', submitFilterForm);
-       if (semSelect) semSelect.addEventListener('change', submitFilterForm);
-     });
-   </script>
- </body>
+    <?php endif; ?>
+  </main>
+</body>
 </html>

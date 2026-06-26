@@ -4,13 +4,8 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'teacher') {
-    if (isset($_GET['teacher_id'])) {
-        $_SESSION['user_role'] = 'teacher';
-        $_SESSION['user_id'] = intval($_GET['teacher_id']);
-    } else {
-        header('Location: login.php');
-        exit;
-    }
+    header('Location: login.php');
+    exit;
 }
 
 $userId = intval($_SESSION['user_id']);
@@ -84,7 +79,81 @@ if ($activeSectionId && $activeSubjectId) {
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_grades'])) {
+    if (!verify_csrf()) { header('Location: ' . $_SERVER['PHP_SELF'] . '?section_id=' . ($_POST['section_id'] ?? 0) . '&subject_id=' . ($_POST['subject_id'] ?? 0)); exit; }
+    $sectionId = intval($_POST['section_id'] ?? 0);
+    $subjectId = intval($_POST['subject_id'] ?? 0);
+    $sy = trim($_POST['school_year'] ?? $schoolYear);
+    $sem = trim($_POST['semester'] ?? $semester);
+
+    if (isset($_FILES['grades_csv']) && $_FILES['grades_csv']['error'] === UPLOAD_ERR_OK) {
+        $file = fopen($_FILES['grades_csv']['tmp_name'], 'r');
+        if ($file) {
+            $conn2 = db_connect();
+            if ($conn2) {
+                fgetcsv($file);
+                while (($row = fgetcsv($file)) !== false) {
+                    $studentId = intval($row[0] ?? 0);
+                    $prelim = isset($row[1]) && $row[1] !== '' ? max(0, min(100, floatval($row[1]))) : null;
+                    $midterm = isset($row[2]) && $row[2] !== '' ? max(0, min(100, floatval($row[2]))) : null;
+                    $finals = isset($row[3]) && $row[3] !== '' ? max(0, min(100, floatval($row[3]))) : null;
+
+                    if ($studentId) {
+                        $existing = get_grade($studentId, $subjectId, $sy, $sem);
+                        if (!$existing) {
+                            $stmt = $conn2->prepare("INSERT INTO grades (student_id, subject_id, teacher_id, section_id, school_year, semester, prelim, midterm, finals, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+                            if ($stmt) {
+                                $stmt->bind_param('iiiisssss', $studentId, $subjectId, $userId, $sectionId, $sy, $sem, $prelim, $midterm, $finals);
+                                $stmt->execute();
+                                $stmt->close();
+                            }
+                        } else {
+                            $upd = $conn2->prepare("UPDATE grades SET prelim = ?, midterm = ?, finals = ?, updated_at = NOW() WHERE student_id = ? AND subject_id = ? AND school_year = ? AND semester = ?");
+                            if ($upd) {
+                                $upd->bind_param('ssssiss', $prelim, $midterm, $finals, $studentId, $subjectId, $sy, $sem);
+                                $upd->execute();
+                                $upd->close();
+                            }
+                        }
+                    }
+                }
+                fclose($file);
+                $conn2->close();
+            }
+        }
+    }
+    header('Location: ' . $_SERVER['PHP_SELF'] . '?section_id=' . $sectionId . '&subject_id=' . $subjectId . '&global_year=' . urlencode($schoolYear) . '&global_sem=' . urlencode($semester));
+    exit;
+}
+
+if (isset($_GET['export_grades']) && $activeSectionId && $activeSubjectId) {
+    $students = get_section_students($activeSectionId);
+    $gradesData = [];
+    foreach ($students as $st) {
+        $g = get_grade((int)($st['id'] ?? 0), $activeSubjectId, $schoolYear, $semester);
+        $gradesData[$st['id']] = $g ?: ['prelim'=>'', 'midterm'=>'', 'finals'=>''];
+    }
+
+    header('Content-Type: text/csv');
+    header('Content-Disposition: attachment; filename="grades_' . $schoolYear . '_' . $semester . '_' . ($sections[$activeSectionId]['code'] ?? $activeSectionId) . '.csv"');
+    $output = fopen('php://output', 'w');
+    fputcsv($output, ['Student ID', 'Name', 'Prelim', 'Midterm', 'Finals']);
+    foreach ($students as $st) {
+        $g = $gradesData[$st['id']] ?? [];
+        fputcsv($output, [
+            $st['student_id'] ?? '',
+            make_full_name($st['first_name'] ?? '', $st['middle_name'] ?? '', $st['last_name'] ?? ''),
+            $g['prelim'] ?? '',
+            $g['midterm'] ?? '',
+            $g['finals'] ?? ''
+        ]);
+    }
+    fclose($output);
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_all_grades'])) {
+    if (!verify_csrf()) { header('Location: ' . $_SERVER['PHP_SELF'] . '?section_id=' . ($_POST['section_id'] ?? 0) . '&subject_id=' . ($_POST['subject_id'] ?? 0)); exit; }
     $sectionId = intval($_POST['section_id'] ?? 0);
     $subjectId = intval($_POST['subject_id'] ?? 0);
     $sy = trim($_POST['school_year'] ?? $schoolYear);
@@ -109,29 +178,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_all_grades'])) {
             }
             if (!$cfg['allowed']) continue;
 
-            // Teacher is allowed to input grades ONLY ONCE per grading period.
-            // If a grade already exists for the student+subject+term and this period
-            // is already filled, block further updates (admin-only via grade_requests).
             $existing = get_grade($sid, $subjectId, $sy, $sem);
             $existingVal = null;
             if ($existing) {
                 $existingVal = $existing[$period] ?? null;
-                // Treat empty string as not set
                 if ($existingVal === '') $existingVal = null;
-                // Treat 0 as a valid submitted grade (0 is within 0-100)
             }
 
-            // If there is an active admin-approved permission grant for this
-            // grading period, allow updates even if a value already exists.
-            // Otherwise, block teacher edits once the period is already submitted.
             $hasPermission = is_period_open_for_teacher($userId, $sy, $sem, $period);
 
             if ($existingVal !== null && !$hasPermission) {
                 continue;
             }
 
-
-            // Create row placeholder if not exists.
             if (!$existing) {
                 save_grade($sid, $subjectId, $userId, $sectionId, $sy, $sem, null, null, null);
             }
@@ -144,6 +203,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_all_grades'])) {
                     $upd->execute();
                     $upd->close();
                 }
+
+                $recalc = $conn2->prepare("SELECT prelim, midterm, finals FROM grades WHERE student_id = ? AND subject_id = ? AND school_year = ? AND semester = ? LIMIT 1");
+                if ($recalc) {
+                    $recalc->bind_param('iiss', $sid, $subjectId, $sy, $sem);
+                    $recalc->execute();
+                    $rRes = $recalc->get_result();
+                    if ($rRow = $rRes->fetch_assoc()) {
+                        $p = $rRow['prelim'];
+                        $m = $rRow['midterm'];
+                        $f = $rRow['finals'];
+                        if ($p !== null && $m !== null && $f !== null) {
+                            $avg = round(($p + $m + $f) / 3, 2);
+                            $gwa = gwa_from_percentage($avg);
+                            $remarks = $avg >= 75 ? 'Passed' : 'Failed';
+                            $upd2 = $conn2->prepare("UPDATE grades SET average = ?, gwa = ?, remarks = ? WHERE student_id = ? AND subject_id = ? AND school_year = ? AND semester = ?");
+                            if ($upd2) {
+                                $upd2->bind_param('dssiiss', $avg, $gwa, $remarks, $sid, $subjectId, $sy, $sem);
+                                $upd2->execute();
+                                $upd2->close();
+                            }
+                        }
+                    }
+                    $recalc->close();
+                }
                 $conn2->close();
             }
 
@@ -155,22 +238,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_all_grades'])) {
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_permission'])) {
-    $reqSectionId = intval($_POST['request_section_id'] ?? 0);
-    $reqSubjectId = intval($_POST['request_subject_id'] ?? 0);
-    $reqPeriod = strtolower(trim($_POST['request_period'] ?? ''));
-    $reqReason = trim($_POST['request_reason'] ?? '');
-
-    if (in_array($reqPeriod, ['prelim', 'midterm', 'finals'], true) && $reqReason !== '' && $reqSectionId && $reqSubjectId) {
-        save_grade_change_request($userId, $reqSectionId, $reqSubjectId, $schoolYear, $semester, $reqPeriod, $reqReason);
-    }
-
-    header('Location: ' . $_SERVER['PHP_SELF'] . '?global_year=' . urlencode($schoolYear) . '&global_sem=' . urlencode($semester));
-    exit;
-}
-
 $activeNav = 'classes';
-require_once __DIR__ . '/inc/teacher_layout.php';
+ob_start();
 ?>
 <?php if (!$activeSectionId): ?>
     <h1 class="view-title">Select Section</h1>
@@ -193,7 +262,7 @@ require_once __DIR__ . '/inc/teacher_layout.php';
         <?php endforeach; endif; ?>
     </div>
 <?php elseif ($activeSectionId && !$activeSubjectId): ?>
-    <a href="?" class="btn-back"><i class="fa-solid fa-arrow-left"></i> Back to Sections</a>
+    <a href="?global_year=<?php echo urlencode($schoolYear); ?>&global_sem=<?php echo urlencode($semester); ?>" class="btn-back"><i class="fa-solid fa-arrow-left"></i> Back to Sections</a>
     <h1 class="view-title">Select Subject</h1>
     <div class="subjects-grid">
         <?php foreach ($sections[$activeSectionId]['subjects'] as $subj): ?>
@@ -217,20 +286,37 @@ require_once __DIR__ . '/inc/teacher_layout.php';
     <p class="view-subtitle"><?php echo htmlspecialchars("$schoolYear | $semester"); ?></p>
 
     <?php if (isset($_GET['err']) && $_GET['err'] === 'locked'): ?>
-        <div class="alert alert-error" style="margin-bottom:24px;"><i class="fa-solid fa-lock"></i> <strong>Submission locked.</strong> This grading period is currently closed for <?php echo htmlspecialchars($schoolYear . ' ' . $semester); ?>. You can request temporary access.</div>
+        <div class="alert alert-error" style="margin-bottom:24px;"><i class="fa-solid fa-lock"></i> <strong>Submission locked.</strong> This grading period is currently closed for <?php echo htmlspecialchars($schoolYear . ' ' . $semester); ?>.</div>
     <?php endif; ?>
 
     <?php
     $anyOpen = ($isPeriodOpen['prelim'] ?? false) || ($isPeriodOpen['midterm'] ?? false) || ($isPeriodOpen['finals'] ?? false);
-    $allOpen = ($isPeriodOpen['prelim'] ?? false) && ($isPeriodOpen['midterm'] ?? false) && ($isPeriodOpen['finals'] ?? false);
     ?>
 
     <div class="panel-block">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
             <h2 class="block-title" style="margin:0;">Grade Entry</h2>
-            <?php if (!$allOpen): ?>
-                <button type="button" class="btn btn-request" id="btn-request-permission"><i class="fa-solid fa-hand"></i> Request Permission to Edit</button>
-            <?php endif; ?>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button type="button" class="btn-action" id="btn-export-grades"><i class="fa-solid fa-file-export"></i> Export CSV</button>
+                <button type="button" class="btn-action" id="btn-import-grades"><i class="fa-solid fa-file-import"></i> Import CSV</button>
+            </div>
+        </div>
+
+        <div id="import-form-wrapper" style="display:none; margin-bottom:16px; padding:16px; background:#f9fafb; border:1px solid var(--border-color); border-radius:8px;">
+            <form method="post" enctype="multipart/form-data" id="import-grades-form">
+                <?php echo csrf_field(); ?>
+                <input type="hidden" name="import_grades" value="1">
+                <input type="hidden" name="section_id" value="<?php echo $activeSectionId; ?>">
+                <input type="hidden" name="subject_id" value="<?php echo $activeSubjectId; ?>">
+                <input type="hidden" name="school_year" value="<?php echo htmlspecialchars($schoolYear); ?>">
+                <input type="hidden" name="semester" value="<?php echo htmlspecialchars($semester); ?>">
+                <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+                    <input type="file" name="grades_csv" accept=".csv" required style="padding:8px;">
+                    <button type="submit" class="btn-submit"><i class="fa-solid fa-upload"></i> Upload</button>
+                    <button type="button" class="btn-cancel" id="btn-cancel-import">Cancel</button>
+                </div>
+                <p style="font-size:0.8rem; color:var(--text-muted); margin-top:8px;">CSV format: Student ID, Prelim, Midterm, Finals</p>
+            </form>
         </div>
 
         <?php if (!$anyOpen): ?>
@@ -239,11 +325,13 @@ require_once __DIR__ . '/inc/teacher_layout.php';
 
         <div class="grade-submission-wrapper">
             <form id="grades-form" class="grade-form" method="post">
+                <?php echo csrf_field(); ?>
                 <input type="hidden" name="section_id" value="<?php echo $activeSectionId; ?>">
                 <input type="hidden" name="subject_id" value="<?php echo $activeSubjectId; ?>">
                 <input type="hidden" name="school_year" value="<?php echo htmlspecialchars($schoolYear); ?>">
                 <input type="hidden" name="semester" value="<?php echo htmlspecialchars($semester); ?>">
                 <input type="hidden" name="save_all_grades" value="1">
+
                 <div class="table-responsive">
                     <table class="grade-table">
                         <thead>
@@ -260,12 +348,9 @@ require_once __DIR__ . '/inc/teacher_layout.php';
                         <tbody>
                             <?php foreach ($students as $st): 
                                 $g = $gradesData[$st['id']] ?? [];
-                                // If period is open (deadline or admin-granted permission), enable input.
-                                // Also allow inputs again after admin approval even if a value already exists.
                                 $prelimDisabled  = ($isPeriodOpen['prelim'] ?? false) ? '' : 'disabled';
                                 $midtermDisabled = ($isPeriodOpen['midterm'] ?? false) ? '' : 'disabled';
                                 $finalsDisabled  = ($isPeriodOpen['finals'] ?? false) ? '' : 'disabled';
-
                             ?>
                             <tr>
                                 <td>
@@ -276,122 +361,96 @@ require_once __DIR__ . '/inc/teacher_layout.php';
                                 <td><div class="grade-input-wrapper"><input type="number" step="0.01" name="prelim_values[]" class="grade-input grade-input--period" data-period="prelim" value="<?php echo htmlspecialchars($g['prelim'] ?? ''); ?>" <?php echo $prelimDisabled; ?>></div></td>
                                 <td><div class="grade-input-wrapper"><input type="number" step="0.01" name="midterm_values[]" class="grade-input grade-input--period" data-period="midterm" value="<?php echo htmlspecialchars($g['midterm'] ?? ''); ?>" <?php echo $midtermDisabled; ?>></div></td>
                                 <td><div class="grade-input-wrapper"><input type="number" step="0.01" name="finals_values[]" class="grade-input grade-input--period" data-period="finals" value="<?php echo htmlspecialchars($g['finals'] ?? ''); ?>" <?php echo $finalsDisabled; ?>></div></td>
-                                <td><span class="total-grade">-</span></td>
-                                <td><span class="gwa-badge">-</span></td>
+                                <td><span class="total-grade"><?php echo $g['average'] !== null ? htmlspecialchars($g['average']) : '-'; ?></span></td>
+                                <td><span class="gwa-badge"><?php echo $g['gwa'] !== null ? htmlspecialchars($g['gwa']) : '-'; ?></span></td>
                             </tr>
                             <?php endforeach; ?>
                         </tbody>
                     </table>
                 </div>
                 <?php if ($anyOpen): ?>
-                    <div class="form-actions">
+                    <div class="form-actions" style="margin-top:16px;">
                         <button type="submit" class="btn-save-all"><i class="fa-solid fa-floppy-disk"></i> Save Grades</button>
                     </div>
                 <?php endif; ?>
             </form>
         </div>
     </div>
-    <?php if (!$allOpen): ?>
-    <div id="request-modal-backdrop" class="modal-backdrop">
-        <div class="modal-card">
-            <button type="button" class="modal-close" id="btn-close-request-modal"><i class="fa-solid fa-xmark"></i></button>
-            <h3 style="margin-bottom:16px;">Request Permission to Edit Grades</h3>
-            <form method="post" id="request-form">
-                <div class="form-group">
-                    <label>Grading Period</label>
-                    <select name="request_period" id="request-period" class="form-control" required>
-                        <?php foreach (['prelim' => 'Prelim', 'midterm' => 'Midterm', 'finals' => 'Finals'] as $key => $label): ?>
-                            <option value="<?php echo $key; ?>" <?php echo (!$isPeriodOpen[$key]) ? 'selected' : ''; ?>><?php echo $label; ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Section</label>
-                    <select name="request_section_id" class="form-control" required>
-                        <option value="">Select section</option>
-                        <?php foreach ($sections as $sec): ?>
-                            <option value="<?php echo (int)$sec['id']; ?>" <?php echo $activeSectionId===$sec['id']?'selected':''; ?>><?php echo htmlspecialchars($sec['code'] ?? $sec['name']); ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Subject</label>
-                    <select name="request_subject_id" class="form-control" required>
-                        <option value="">Select subject</option>
-                        <?php if ($activeSectionId && isset($sections[$activeSectionId]['subjects'])): foreach ($sections[$activeSectionId]['subjects'] as $subj): ?>
-                            <option value="<?php echo (int)$subj['subject_id']; ?>" <?php echo $activeSubjectId===$subj['subject_id']?'selected':''; ?>><?php echo htmlspecialchars($subj['code'] . ' - ' . $subj['title']); ?></option>
-                        <?php endforeach; endif; ?>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Reason for Request</label>
-                    <textarea name="request_reason" class="form-control" rows="4" required placeholder="Please explain why you need to edit..."></textarea>
-                </div>
-                <div style="display:flex; gap:12px; align-items:center;">
-                    <button type="submit" name="request_permission" class="btn btn-submit"><i class="fa-solid fa-paper-plane"></i> Submit Request</button>
-                    <button type="button" class="btn-cancel" id="btn-cancel-request">Cancel</button>
-                </div>
-            </form>
-        </div>
-    </div>
-    <?php endif; ?>
 <?php endif; ?>
 
+<?php
+$classesContent = ob_get_clean();
+$activeNav = 'classes';
+require_once __DIR__ . '/inc/teacher_layout.php';
+?>
+
 <script>
-    function syncTeacherFilter() {
-        const year = document.getElementById('global-sy-select').value;
-        const sem  = document.getElementById('global-sem-select').value;
-        const url  = new URL(window.location);
-        url.searchParams.set('global_year', year);
-        url.searchParams.set('global_sem', sem);
-        url.searchParams.delete('school_year');
-        url.searchParams.delete('semester');
-        url.searchParams.delete('academic_year');
-        window.location.href = url.toString();
+document.addEventListener('DOMContentLoaded', function() {
+    const btnExport = document.getElementById('btn-export-grades');
+    const btnImport = document.getElementById('btn-import-grades');
+    const importWrapper = document.getElementById('import-form-wrapper');
+    const btnCancelImport = document.getElementById('btn-cancel-import');
+
+    if (btnExport) {
+        btnExport.addEventListener('click', function() {
+            const url = new URL(window.location);
+            url.searchParams.set('export_grades', '1');
+            window.location.href = url.toString();
+        });
     }
 
-    document.addEventListener('DOMContentLoaded', function() {
-        const yearSelect = document.getElementById('global-sy-select');
-        const semSelect = document.getElementById('global-sem-select');
-        if (yearSelect) yearSelect.addEventListener('change', syncTeacherFilter);
-        if (semSelect) semSelect.addEventListener('change', syncTeacherFilter);
+    if (btnImport) {
+        btnImport.addEventListener('click', function() {
+            if (importWrapper) importWrapper.style.display = 'block';
+        });
+    }
 
-        const btnRequestPermission = document.getElementById('btn-request-permission');
-        const requestModalBackdrop = document.getElementById('request-modal-backdrop');
-        const btnCloseRequestModal = document.getElementById('btn-close-request-modal');
-        const btnCancelRequest = document.getElementById('btn-cancel-request');
+    if (btnCancelImport) {
+        btnCancelImport.addEventListener('click', function() {
+            if (importWrapper) importWrapper.style.display = 'none';
+        });
+    }
 
-        if (btnRequestPermission && requestModalBackdrop) {
-            btnRequestPermission.addEventListener('click', function() {
-                requestModalBackdrop.style.display = 'flex';
-            });
-        }
-        if (btnCloseRequestModal && requestModalBackdrop) {
-            btnCloseRequestModal.addEventListener('click', function() {
-                requestModalBackdrop.style.display = 'none';
-            });
-        }
-        if (btnCancelRequest && requestModalBackdrop) {
-            btnCancelRequest.addEventListener('click', function() {
-                requestModalBackdrop.style.display = 'none';
-            });
-        }
-        if (requestModalBackdrop) {
-            requestModalBackdrop.addEventListener('click', function(e) {
-                if (e.target === requestModalBackdrop) {
-                    requestModalBackdrop.style.display = 'none';
+    function calculateGwa(percentage) {
+        if (percentage >= 97) return '1.00';
+        if (percentage >= 94) return '1.25';
+        if (percentage >= 91) return '1.50';
+        if (percentage >= 88) return '1.75';
+        if (percentage >= 85) return '2.00';
+        if (percentage >= 82) return '2.25';
+        if (percentage >= 79) return '2.50';
+        if (percentage >= 76) return '2.75';
+        if (percentage >= 75) return '3.00';
+        return '5.00';
+    }
+
+    document.querySelectorAll('.grade-input--period').forEach(function(input) {
+        input.addEventListener('input', function() {
+            const row = this.closest('tr');
+            const prelim = row.querySelector('input[data-period="prelim"]').value;
+            const midterm = row.querySelector('input[data-period="midterm"]').value;
+            const finals = row.querySelector('input[data-period="finals"]').value;
+            const totalGradeEl = row.querySelector('.total-grade');
+            const gwaEl = row.querySelector('.gwa-badge');
+
+            if (prelim !== '' && midterm !== '' && finals !== '') {
+                const p = parseFloat(prelim);
+                const m = parseFloat(midterm);
+                const f = parseFloat(finals);
+                if (!isNaN(p) && !isNaN(m) && !isNaN(f)) {
+                    const avg = ((p + m + f) / 3).toFixed(2);
+                    const gwa = calculateGwa(parseFloat(avg));
+                    totalGradeEl.textContent = avg;
+                    gwaEl.textContent = gwa;
+                } else {
+                    totalGradeEl.textContent = '-';
+                    gwaEl.textContent = '-';
                 }
-            });
-        }
-
-        const sidebarToggle = document.getElementById('sidebar-toggle');
-        const sidebar = document.getElementById('sidebar');
-        if (sidebarToggle && sidebar) {
-            sidebarToggle.addEventListener('click', function() {
-                sidebar.classList.toggle('is-open');
-            });
-        }
+            } else {
+                totalGradeEl.textContent = '-';
+                gwaEl.textContent = '-';
+            }
+        });
     });
+});
 </script>
-</body>
-</html>
