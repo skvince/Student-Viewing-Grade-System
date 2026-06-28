@@ -143,6 +143,32 @@ foreach ($deadlines as $d) {
   <h1 class="view-title">Grade Deadlines</h1>
   <p class="view-subtitle">Manage submission deadlines for each grading period</p>
 
+<<<<<<< HEAD
+=======
+  <?php if ($message): ?>
+    <div class="alert alert-<?php echo htmlspecialchars($messageType); ?>" style="margin-bottom:24px;">
+      <?php echo htmlspecialchars($message); ?>
+    </div>
+<<<<<<< HEAD
+    <a href="login.php?logout=1" class="logout-btn"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
+  </aside>
+  <div class="main-content">
+    <form method="get" action="" style="margin-bottom:0;">
+      <input type="hidden" name="global_year" id="hidden-global-year" value="<?php echo htmlspecialchars($selectedYear); ?>">
+      <input type="hidden" name="global_sem" id="hidden-global-sem" value="<?php echo htmlspecialchars($selectedSem); ?>">
+      <div class="global-term-container">
+        <div class="filter-group">
+          <label for="global-filter-year">
+            <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
+            Academic Year:
+          </label>
+          <select id="global-filter-year" class="global-select">
+            <option value="2025-2026" <?php echo $selectedYear==='2025-2026'?'selected':''; ?>>2025-2026</option>
+            <option value="2026-2027" <?php echo $selectedYear==='2026-2027'?'selected':''; ?>>2026-2027</option>
+=======
+  <?php endif; ?>
+
+>>>>>>> 057c58b963eff478d2fe848c7558374589b2a682
   <!-- ── Set Deadlines ──────────────────────────────────────────────────────── -->
   <div class="panel-block">
     <div class="block-header">
@@ -196,6 +222,7 @@ foreach ($deadlines as $d) {
             <option value="open"     <?php echo $curStatus === 'open'     ? 'selected' : ''; ?>>Open</option>
             <option value="closed"   <?php echo $curStatus === 'closed'   ? 'selected' : ''; ?>>Closed</option>
             <option value="extended" <?php echo $curStatus === 'extended' ? 'selected' : ''; ?>>Extended</option>
+>>>>>>> a4003c255d4e7c109330f0cc250cef76703e199e
           </select>
         </div>
 
