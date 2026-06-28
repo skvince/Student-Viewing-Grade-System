@@ -142,6 +142,7 @@ $totalAvg = $totalUnits > 0 ? $totalWeightedAvg / $totalUnits : 0;
   <link rel="icon" type="image/png" href="https://cscqcph.com/images/bg/cscqcph.png"/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <style>
   :root {
     --bg-color: #f1f4f2;
@@ -294,15 +295,6 @@ $totalAvg = $totalUnits > 0 ? $totalWeightedAvg / $totalUnits : 0;
 
   <main>
     <?php if (!$canViewGrades): ?>
-      <div class="alert alert-error" style="margin-bottom:24px;">
-        <i class="fa-solid fa-lock"></i>
-        <strong>Grade viewing is currently unavailable</strong> for Academic Year
-        <?php echo htmlspecialchars($filterYear); ?> / <?php echo htmlspecialchars($filterSem); ?>.
-        The viewing period has not started.
-        <a href="student_requests.php" style="color:var(--primary-green);font-weight:600;text-decoration:underline;margin-left:8px;">
-          Request Access
-        </a>
-      </div>
     <?php endif; ?>
 
     <?php if ($canViewGrades): ?>
@@ -384,5 +376,32 @@ $totalAvg = $totalUnits > 0 ? $totalWeightedAvg / $totalUnits : 0;
     </section>
     <?php endif; ?>
   </main>
+  <script>
+  function showPopup(type, title, message) {
+      const configs = {
+          success: { icon: '✅', color: '#28A745' },
+          updated: { icon: '✏️', color: '#0D6EFD' },
+          delete:  { icon: '🗑️', color: '#DC3545' },
+          error:   { icon: '❌', color: '#DC3545' },
+          warning: { icon: '⚠️', color: '#FFC107' },
+          info:    { icon: 'ℹ️', color: '#17A2B8' }
+      };
+      const cfg = configs[type] || configs.info;
+      Swal.fire({
+          icon: cfg.icon,
+          title: '<strong>' + (title || cfg.title) + '</strong>',
+          html: '<p style="font-size:1rem;color:#555;">' + message + '</p>',
+          confirmButtonText: 'OK',
+          confirmButtonColor: cfg.color,
+          customClass: { popup: 'popup-alert', confirmButton: 'popup-btn' },
+          didOpen: function() { document.querySelector('.swal2-popup').style.borderRadius = '12px'; }
+      });
+  }
+  document.addEventListener('DOMContentLoaded', function() {
+    <?php if (!$canViewGrades): ?>
+    showPopup('info', 'Information', 'Grade viewing is currently unavailable for Academic Year <?php echo htmlspecialchars($filterYear); ?> / <?php echo htmlspecialchars($filterSem); ?>. The viewing period has not started. <a href="student_requests.php" style="color:#0e4429;font-weight:600;text-decoration:underline;">Request Access</a>');
+    <?php endif; ?>
+  });
+  </script>
 </body>
 </html>

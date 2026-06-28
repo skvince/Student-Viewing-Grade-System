@@ -27,8 +27,9 @@ if ($conn) {
     $conn->close();
 }
 
-$message = '';
-$messageType = '';
+$flashPopupType = '';
+$flashPopupTitle = '';
+$flashPopupMessage = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
     if (!verify_csrf()) { header('Location: ' . $_SERVER['PHP_SELF']); exit; }
@@ -37,19 +38,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
     $reason = trim($_POST['reason'] ?? '');
 
     if (!$schoolYear || !$semester) {
-        $message = 'Academic Year and Semester are required.';
-        $messageType = 'error';
+        $flashPopupType = 'warning';
+        $flashPopupTitle = 'Warning';
+        $flashPopupMessage = 'Academic Year and Semester are required.';
     } elseif (!is_request_submission_active($schoolYear, $semester)) {
-        $message = 'Grade access requests are not currently open for this period. Please check the schedule.';
-        $messageType = 'error';
+        $flashPopupType = 'warning';
+        $flashPopupTitle = 'Warning';
+        $flashPopupMessage = 'Grade access requests are not currently open for this period. Please check the schedule.';
     } else {
         $result = create_grade_access_request($userId, $schoolYear, $semester, $reason ?: null);
         if ($result) {
-            $message = 'Grade access request submitted successfully.';
-            $messageType = 'success';
+            $flashPopupType = 'success';
+            $flashPopupTitle = 'Success';
+            $flashPopupMessage = 'Grade access request submitted successfully.';
         } else {
-            $message = 'Failed to submit request. Please try again.';
-            $messageType = 'error';
+            $flashPopupType = 'error';
+            $flashPopupTitle = 'Error';
+            $flashPopupMessage = 'Failed to submit request. Please try again.';
         }
     }
 }
@@ -84,6 +89,7 @@ foreach ($requestSchedules as $s) {
   <link rel="icon" type="image/png" href="https://cscqcph.com/images/bg/cscqcph.png"/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <style>
   :root {
       --bg-color: #f1f4f2;
@@ -191,10 +197,6 @@ foreach ($requestSchedules as $s) {
       </a>
     </div>
 
-    <?php if ($message): ?>
-      <div class="alert alert-<?php echo $messageType; ?>"><?php echo htmlspecialchars($message); ?></div>
-    <?php endif; ?>
-
     <section class="panel-block">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
         <div>
@@ -293,6 +295,50 @@ foreach ($requestSchedules as $s) {
         });
       }
     });
+
+    function showPopup(type, title, message) {
+        const configs = {
+            success: { icon: '✅', color: '#28A745' },
+            updated: { icon: '✏️', color: '#0D6EFD' },
+            delete:  { icon: '🗑️', color: '#DC3545' },
+            error:   { icon: '❌', color: '#DC3545' },
+            warning: { icon: '⚠️', color: '#FFC107' },
+            info:    { icon: 'ℹ️', color: '#17A2B8' }
+        };
+        const cfg = configs[type] || configs.info;
+        Swal.fire({
+            icon: cfg.icon,
+            title: '<strong>' + title + '</strong>',
+            html: '<p style="font-size:1rem;color:#555;">' + message + '</p>',
+            confirmButtonText: 'OK',
+            confirmButtonColor: cfg.color,
+            customClass: { popup: 'popup-alert', confirmButton: 'popup-btn' },
+            didOpen: function() { document.querySelector('.swal2-popup').style.borderRadius = '12px'; }
+        });
+    }
+
+    function showConfirmDialog(title, message) {
+        return Swal.fire({
+            title: '<strong>' + title + '</strong>',
+            html: '<p style="font-size:1rem;color:#555;">' + message + '</p>',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Delete',
+            confirmButtonColor: '#DC3545',
+            cancelButtonText: 'Cancel',
+            cancelButtonColor: '#6B7280',
+            reverseButtons: true,
+            customClass: { popup: 'popup-alert', confirmButton: 'popup-btn', cancelButton: 'popup-btn-cancel' },
+            didOpen: function() { document.querySelector('.swal2-popup').style.borderRadius = '12px'; }
+        });
+    }
   </script>
+  <?php if (!empty($flashPopupType) && !empty($flashPopupTitle) && !empty($flashPopupMessage)): ?>
+  <script>
+  document.addEventListener('DOMContentLoaded', function() {
+      showPopup('<?php echo $flashPopupType; ?>', '<?php echo addslashes($flashPopupTitle); ?>', '<?php echo addslashes($flashPopupMessage); ?>');
+  });
+  </script>
+  <?php endif; ?>
 </body>
 </html>

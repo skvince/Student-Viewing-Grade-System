@@ -868,25 +868,32 @@ function is_period_open_for_teacher(int $teacherId, string $schoolYear, string $
     $conn = db_connect();
     if (!$conn) return false;
 
-    $stmt = $conn->prepare("SELECT id FROM permission_grants
+    $stmt = $conn->prepare("SELECT id, start_date, expires_at FROM permission_grants
         WHERE teacher_id = ? AND school_year = ? AND semester = ? AND grading_period = ?
-            AND is_active = 1 AND (expires_at IS NULL OR expires_at > NOW())
+            AND is_active = 1
+            AND (expires_at IS NULL OR expires_at > NOW())
         LIMIT 1");
     if (!$stmt) { $conn->close(); return false; }
 
     $stmt->bind_param('isss', $teacherId, $schoolYear, $semester, $gradingPeriod);
     $stmt->execute();
     $res = $stmt->get_result();
-    $hasGrant = $res && $res->fetch_assoc();
+    $grantRow = $res ? $res->fetch_assoc() : null;
+    $hasGrant = $grantRow && !empty($grantRow['id']);
     $stmt->close();
     $conn->close();
 
-    // If explicitly granted, still enforce schedule time window.
-    // (Some flows may bypass deadline status computation.)
+    if ($hasGrant) {
+        $now = new DateTime();
+        if (!empty($grantRow['start_date'])) {
+            $startDt = new DateTime($grantRow['start_date']);
+            if ($now < $startDt) return false;
+        }
+        return true;
+    }
+
     $deadline = get_deadline($schoolYear, $semester, $gradingPeriod);
     if (!$deadline) {
-        // No deadline set - allow grade input for initial setup
-        // If no permission grant, still check if teacher already submitted
         return !$hasGrant ? !has_teacher_submitted_grades($teacherId, $schoolYear, $semester, $gradingPeriod) : true;
     }
 
@@ -894,14 +901,11 @@ function is_period_open_for_teacher(int $teacherId, string $schoolYear, string $
     $startAllowed = true;
     if (!empty($deadline['start_date'])) {
         $startDt = new DateTime($deadline['start_date']);
-        // Allow only after start time
         $startAllowed = $now >= $startDt;
     }
 
     if ($deadline['status'] === 'extended') {
-        if (empty($deadline['extended_until'])) {
-            return false;
-        }
+        if (empty($deadline['extended_until'])) return false;
         if (!$startAllowed) return false;
         $extDt = new DateTime($deadline['extended_until']);
         if ($now > $extDt) return false;
@@ -911,16 +915,10 @@ function is_period_open_for_teacher(int $teacherId, string $schoolYear, string $
         $endDt = new DateTime($deadline['end_date']);
         if ($now > $endDt) return false;
     } else {
-        // closed
         return false;
     }
 
-    // If no permission grant, also block after teacher has already submitted.
-    if (!$hasGrant) {
-        return !has_teacher_submitted_grades($teacherId, $schoolYear, $semester, $gradingPeriod);
-    }
-
-    return true;
+    return !has_teacher_submitted_grades($teacherId, $schoolYear, $semester, $gradingPeriod);
 }
 
 
@@ -984,7 +982,7 @@ function save_grade_change_request(int $teacherId, int $sectionId, int $subjectI
     return $ok ? $requestId : null;
 }
 
-function update_grade_change_request_status(int $requestId, string $status, ?int $adminId, ?string $adminResponse, ?string $expiresAt = null): bool {
+function update_grade_change_request_status(int $requestId, string $status, ?int $adminId, ?string $adminResponse, ?string $startAt = null, ?string $expiresAt = null): bool {
     $conn = db_connect();
     if (!$conn) return false;
 
@@ -1017,17 +1015,20 @@ function update_grade_change_request_status(int $requestId, string $status, ?int
             $gradingPeriod = $row['grading_period'] ?? '';
 
             if ($status === 'approved') {
-                if ($expiresAt) {
-                    $grant = $conn->prepare("INSERT INTO permission_grants (teacher_id, school_year, semester, grading_period, expires_at, is_active)
-                        VALUES (?, ?, ?, ?, ?, 1)");
+                if ($startAt || $expiresAt) {
+                    $grant = $conn->prepare("INSERT INTO permission_grants (teacher_id, school_year, semester, grading_period, start_date, expires_at, is_active)
+                        VALUES (?, ?, ?, ?, ?, ?, 1)");
                     if ($grant) {
-                        $grant->bind_param('issss', $teacherId, $schoolYear, $semester, $gradingPeriod, $expiresAt);
+                        $grant->bind_param('isssss', $teacherId, $schoolYear, $semester, $gradingPeriod, $startAt, $expiresAt);
                         $grant->execute();
                         $grant->close();
                     }
                 }
 
-                $expiresLabel = $expiresAt ? (' until ' . date('M d, Y h:i A', strtotime($expiresAt))) : 'permanently';
+                $expiresLabel = $expiresAt ? ('until ' . date('M d, Y h:i A', strtotime($expiresAt))) : 'permanently';
+                if ($startAt) {
+                    $expiresLabel = 'from ' . date('M d, Y h:i A', strtotime($startAt)) . ' ' . $expiresLabel;
+                }
                 create_notification($teacherId, 'teacher', 'Request Approved',
                     "Your {$gradingPeriod} grade editing request for {$schoolYear} {$semester} has been approved ({$expiresLabel}).", 'success');
             } else {

@@ -21,9 +21,9 @@ $teachers     = [];
 $sections     = [];
 $subjects     = [];
 $assignments  = [];
-$saveError    = '';
-$subjectError = $_SESSION['subject_error'] ?? '';
-unset($_SESSION['subject_error']);
+$flashPopupType = '';
+$flashPopupTitle = '';
+$flashPopupMessage = '';
 $editSubjectId = isset($_GET['edit_subject']) ? intval($_GET['edit_subject']) : 0;
 $gradedSubjectIds = [];
 
@@ -65,7 +65,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_subject'])) {
     $subUnits = intval($_POST['subject_units'] ?? 3);
 
     if (!$editSubjectId || !$subCode || !$subTitle || !$subYear || !$subSem) {
-        $subjectError = 'All subject fields are required.';
+        $flashPopupType = 'error';
+        $flashPopupTitle = 'Error';
+        $flashPopupMessage = 'All subject fields are required.';
     } else {
         $conn = db_connect();
         if ($conn) {
@@ -82,13 +84,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_subject'])) {
                     header('Location: ' . $_SERVER['PHP_SELF']);
                     exit;
                 } else {
-                    $subjectError = ($conn->errno === 1062)
+                    $flashPopupType = 'error';
+                    $flashPopupTitle = 'Error';
+                    $flashPopupMessage = ($conn->errno === 1062)
                         ? "Subject code \"$subCode\" already exists."
                         : 'Subject update failed: ' . $st->error;
                     $st->close();
                 }
             } else {
-                $subjectError = 'Subject prepare failed: ' . $conn->error;
+                $flashPopupType = 'error';
+                $flashPopupTitle = 'Error';
+                $flashPopupMessage = 'Subject prepare failed: ' . $conn->error;
             }
             $conn->close();
         }
@@ -125,7 +131,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_subject']) && !i
     $subUnits = intval($_POST['subject_units'] ?? 3);
 
     if (!$subCode || !$subTitle || !$subYear || !$subSem) {
-        $subjectError = 'All subject fields are required.';
+        $flashPopupType = 'error';
+        $flashPopupTitle = 'Error';
+        $flashPopupMessage = 'All subject fields are required.';
     } else {
         $conn = db_connect();
         if ($conn) {
@@ -142,13 +150,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_subject']) && !i
                     header('Location: ' . $_SERVER['PHP_SELF']);
                     exit;
                 } else {
-                    $subjectError = ($conn->errno === 1062)
+                    $flashPopupType = 'error';
+                    $flashPopupTitle = 'Error';
+                    $flashPopupMessage = ($conn->errno === 1062)
                         ? "Subject code \"$subCode\" already exists."
                         : 'Subject save failed: ' . $st->error;
                     $st->close();
                 }
             } else {
-                $subjectError = 'Subject prepare failed: ' . $conn->error;
+                $flashPopupType = 'error';
+                $flashPopupTitle = 'Error';
+                $flashPopupMessage = 'Subject prepare failed: ' . $conn->error;
             }
             $conn->close();
         }
@@ -174,8 +186,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_assignment'])) {
     $semester   = normalize_semester($semester);
 
     if (!$teacherId || !$sectionId || !$subjectId) {
-
-        $saveError = 'Teacher, Section, and Subject Module are required.';
+        $flashPopupType = 'error';
+        $flashPopupTitle = 'Error';
+        $flashPopupMessage = 'Teacher, Section, and Subject Module are required.';
     } else {
         $conn = db_connect();
         if ($conn) {
@@ -209,15 +222,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_assignment'])) {
                     header('Location: ' . $_SERVER['PHP_SELF']);
                     exit;
                 } else {
-                    $saveError = 'Assignment save failed: ' . $st->error;
+        $flashPopupType = 'error';
+        $flashPopupTitle = 'Error';
+        $flashPopupMessage = 'Assignment save failed: ' . $st->error;
                     $st->close();
                 }
             } else {
-                $saveError = 'Assignment prepare failed: ' . $conn->error;
+                $flashPopupType = 'error';
+                $flashPopupTitle = 'Error';
+                $flashPopupMessage = 'Assignment prepare failed: ' . $conn->error;
             }
             $conn->close();
         } else {
-            $saveError = 'Database connection failed.';
+            $flashPopupType = 'error';
+            $flashPopupTitle = 'Error';
+            $flashPopupMessage = 'Database connection failed.';
         }
     }
 }
@@ -240,7 +259,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_assignment']))
 
 
     if (!$assignmentId || !$teacherId || !$sectionId || !$subjectId) {
-        $saveError = 'Teacher, Section, and Subject Module are required.';
+        $flashPopupType = 'error';
+        $flashPopupTitle = 'Error';
+        $flashPopupMessage = 'Teacher, Section, and Subject Module are required.';
     } else {
         $conn = db_connect();
         if ($conn) {
@@ -272,15 +293,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_assignment']))
                     header('Location: ' . $_SERVER['PHP_SELF']);
                     exit;
                 } else {
-                    $saveError = 'Assignment update failed: ' . $st->error;
+                    $flashPopupType = 'error';
+                    $flashPopupTitle = 'Error';
+                    $flashPopupMessage = 'Assignment update failed: ' . $st->error;
                     $st->close();
                 }
             } else {
-                $saveError = 'Assignment prepare failed: ' . $conn->error;
+                $flashPopupType = 'error';
+                $flashPopupTitle = 'Error';
+                $flashPopupMessage = 'Assignment prepare failed: ' . $conn->error;
             }
             $conn->close();
         } else {
-            $saveError = 'Database connection failed.';
+            $flashPopupType = 'error';
+            $flashPopupTitle = 'Error';
+            $flashPopupMessage = 'Database connection failed.';
         }
     }
 }
@@ -395,8 +422,6 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
         <div class="block-header">
           <h2 class="block-title">Create / Manage Subjects</h2>
         </div>
-
-        <?php if ($subjectError): ?><div class="alert-error"><i class="fa-solid fa-triangle-exclamation"></i> <?= htmlspecialchars($subjectError) ?></div><?php endif; ?>
 
         <form method="post" action="">
         <?php echo csrf_field(); ?>
@@ -528,10 +553,6 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
       <div class="block-header">
         <h2 class="block-title">Create New Assignment Connection</h2>
       </div>
-
-      <?php if ($saveError): ?>
-        <div class="alert-error"><i class="fa-solid fa-triangle-exclamation"></i> <?= htmlspecialchars($saveError) ?></div>
-      <?php endif; ?>
 
       <form method="post" action="">
         <?php echo csrf_field(); ?>
@@ -828,13 +849,18 @@ $gradedSubjectIds = array_unique($gradedSubjectIds);
       document.querySelectorAll('.delete-form').forEach(form => {
         form.addEventListener('submit', function(e) {
           const msg = this.getAttribute('data-confirm') || 'Are you sure?';
-          if (!confirm(msg)) e.preventDefault();
+          showConfirmDialog('Delete Record?', msg).then(function(result) {
+            if (!result.isConfirmed) e.preventDefault();
+          });
         });
       });
     });
   </script>
 
 <?php
+if (!empty($flashPopupType) && !empty($flashPopupMessage)) {
+    echo '<script>document.addEventListener("DOMContentLoaded", function() { showPopup("' . $flashPopupType . '", "' . addslashes($flashPopupTitle) . '", "' . addslashes($flashPopupMessage) . '"); });</script>';
+}
 $content = ob_get_clean();
 require_once __DIR__ . '/inc/app_layout.php';
 ?>

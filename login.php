@@ -1,12 +1,16 @@
 <?php require_once __DIR__ . '/inc/functions.php'; ?>
 <?php
 session_start();
-$loginError = '';
+$flashPopupType = '';
+$flashPopupTitle = '';
+$flashPopupMessage = '';
 if (isset($_GET['logout'])) {
     session_unset();
     session_destroy();
     session_start();
-    $loginError = 'You have been logged out.';
+    $flashPopupType = 'info';
+    $flashPopupTitle = 'Information';
+    $flashPopupMessage = 'You have been logged out.';
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
@@ -20,7 +24,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (!$username || !$password) {
-        $loginError = 'Username and password are required.';
+        $flashPopupType = 'warning';
+        $flashPopupTitle = 'Warning';
+        $flashPopupMessage = 'Username and password are required.';
     } else {
         $user = authenticate_user($username, $password);
         if ($user) {
@@ -34,7 +40,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             exit;
         } else {
-            $loginError = 'Invalid username or password.';
+            $flashPopupType = 'error';
+            $flashPopupTitle = 'Error';
+            $flashPopupMessage = 'Invalid username or password.';
         }
     }
 }
@@ -46,6 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CSCQC Portal</title>
     <link rel="icon" type="image/png" href="https://cscqcph.com/images/bg/cscqc.png">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, Helvetica, sans-serif; }
@@ -85,9 +94,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <h1>Sign In</h1>
           </header>
           <form method="post">
-            <?php if ($loginError): ?>
-              <div style="background:#fde8e8;color:#991b1b;padding:10px;border-radius:6px;margin-bottom:12px;"><?php echo htmlspecialchars($loginError); ?></div>
-            <?php endif; ?>
             <label for="username">Username </label>
             <input type="text" id="username" name="username" placeholder="ID" required />
             <label for="password">Password</label>
@@ -103,5 +109,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
       </aside>
     </main>
+    <script>
+    function showPopup(type, title, message) {
+        const configs = {
+            success: { icon: '✅', color: '#28A745' },
+            updated: { icon: '✏️', color: '#0D6EFD' },
+            delete:  { icon: '🗑️', color: '#DC3545' },
+            error:   { icon: '❌', color: '#DC3545' },
+            warning: { icon: '⚠️', color: '#FFC107' },
+            info:    { icon: 'ℹ️', color: '#17A2B8' }
+        };
+        const cfg = configs[type] || configs.info;
+        Swal.fire({
+            icon: cfg.icon,
+            title: '<strong>' + (title || cfg.title) + '</strong>',
+            html: '<p style="font-size:1rem;color:#555;">' + message + '</p>',
+            confirmButtonText: 'OK',
+            confirmButtonColor: cfg.color,
+            customClass: { popup: 'popup-alert', confirmButton: 'popup-btn' },
+            didOpen: function() { document.querySelector('.swal2-popup').style.borderRadius = '12px'; }
+        });
+    }
+    </script>
+    <?php if (!empty($flashPopupType) && !empty($flashPopupMessage)): ?>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        showPopup('<?php echo $flashPopupType; ?>', '<?php echo addslashes($flashPopupTitle ?? ''); ?>', '<?php echo addslashes($flashPopupMessage); ?>');
+    });
+    </script>
+    <?php endif; ?>
   </body>
 </html>

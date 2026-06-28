@@ -18,9 +18,6 @@ $selectedSem  = $term['semester'];
 
 $requestType = $_GET['tab'] ?? 'change';
 
-$message = '';
-$messageType = '';
-
 revoke_expired_permissions();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -28,22 +25,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     $requestId = isset($_POST['request_id']) ? (int)$_POST['request_id'] : 0;
     $response = trim($_POST['admin_response'] ?? '');
-    $expiresValue = trim($_POST['expires_at'] ?? '');
+    $startRaw = trim($_POST['access_start'] ?? '');
+    $endRaw = trim($_POST['access_end'] ?? '');
 
-    $expiresAt = null;
-    if ($expiresValue !== '') {
-        $dt = DateTime::createFromFormat('Y-m-d\TH:i', $expiresValue);
-        $expiresAt = $dt ? $dt->format('Y-m-d H:i:s') : null;
+    $accessStart = null;
+    if ($startRaw !== '') {
+        $dt = DateTime::createFromFormat('Y-m-d\TH:i', $startRaw);
+        $accessStart = $dt ? $dt->format('Y-m-d H:i:s') : null;
+    }
+    $accessEnd = null;
+    if ($endRaw !== '') {
+        $dt = DateTime::createFromFormat('Y-m-d\TH:i', $endRaw);
+        $accessEnd = $dt ? $dt->format('Y-m-d H:i:s') : null;
     }
 
     if ($action === 'approve' && $requestId) {
-        $ok = update_grade_change_request_status($requestId, 'approved', $_SESSION['user_id'], $response, $expiresAt);
-        $message = $ok ? 'Request approved.' : 'Failed to approve request.';
-        $messageType = $ok ? 'success' : 'error';
+        $ok = update_grade_change_request_status($requestId, 'approved', $_SESSION['user_id'], $response, $accessStart, $accessEnd);
+        $flashPopupType = $ok ? 'success' : 'error';
+        $flashPopupTitle = $ok ? 'Success' : 'Error';
+        $flashPopupMessage = $ok ? 'Request approved.' : 'Failed to approve request.';
     } elseif ($action === 'reject' && $requestId) {
         $ok = update_grade_change_request_status($requestId, 'rejected', $_SESSION['user_id'], $response, null);
-        $message = $ok ? 'Request rejected.' : 'Failed to reject request.';
-        $messageType = $ok ? 'success' : 'error';
+        $flashPopupType = $ok ? 'success' : 'error';
+        $flashPopupTitle = $ok ? 'Success' : 'Error';
+        $flashPopupMessage = $ok ? 'Request rejected.' : 'Failed to reject request.';
     } elseif ($action === 'close' && $requestId) {
         $conn = db_connect();
         if ($conn) {
@@ -52,8 +57,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->bind_param('i', $requestId);
                 $ok = $stmt->execute();
                 $stmt->close();
-                $message = $ok ? 'Request closed.' : 'Failed to close request.';
-                $messageType = $ok ? 'success' : 'error';
+                $flashPopupType = $ok ? 'success' : 'error';
+                $flashPopupTitle = $ok ? 'Success' : 'Error';
+                $flashPopupMessage = $ok ? 'Request closed.' : 'Failed to close request.';
             }
             $conn->close();
         }
@@ -62,9 +68,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($conn) {
             $accessStart = null;
             $accessEnd = null;
-            if ($expiresValue) {
-                $accessStart = (new DateTime())->format('Y-m-d H:i:s');
-                $accessEnd = $expiresAt;
+            if ($startRaw !== '') {
+                $accessStart = (new DateTime($startRaw))->format('Y-m-d H:i:s');
+            }
+            if ($endRaw !== '') {
+                $accessEnd = (new DateTime($endRaw))->format('Y-m-d H:i:s');
             }
             $stmt = $conn->prepare("UPDATE grade_access_requests SET status = 'approved', admin_response = ?, admin_id = ?, access_start = ?, access_end = ?, updated_at = NOW() WHERE id = ?");
             if ($stmt) {
@@ -72,8 +80,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->bind_param('sissi', $adminResponse, $_SESSION['user_id'], $accessStart, $accessEnd, $requestId);
                 $ok = $stmt->execute();
                 $stmt->close();
-                $message = $ok ? 'Student access request approved.' : 'Failed to approve access request.';
-                $messageType = $ok ? 'success' : 'error';
+                $flashPopupType = $ok ? 'success' : 'error';
+                $flashPopupTitle = $ok ? 'Success' : 'Error';
+                $flashPopupMessage = $ok ? 'Student access request approved.' : 'Failed to approve access request.';
                 if ($ok) {
                     create_notification(0, 'student', 'Grade Access Approved', 'Your grade access request has been approved.', 'success', 'student_module.php');
                 }
@@ -88,8 +97,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->bind_param('ssi', $response, $_SESSION['user_id'], $requestId);
                 $ok = $stmt->execute();
                 $stmt->close();
-                $message = $ok ? 'Student access request rejected.' : 'Failed to reject access request.';
-                $messageType = $ok ? 'success' : 'error';
+                $flashPopupType = $ok ? 'success' : 'error';
+                $flashPopupTitle = $ok ? 'Success' : 'Error';
+                $flashPopupMessage = $ok ? 'Student access request rejected.' : 'Failed to reject access request.';
             }
             $conn->close();
         }
@@ -147,12 +157,6 @@ if ($conn) {
   <h1 class="view-title">Grade Requests</h1>
   <p class="view-subtitle">Manage grade change and access requests for <?php echo htmlspecialchars($selectedYear . ' ' . $selectedSem); ?></p>
 
-  <?php if ($message): ?>
-    <div class="alert alert-<?php echo $messageType; ?>" style="margin-bottom:24px;">
-      <?php echo htmlspecialchars($message); ?>
-    </div>
-  <?php endif; ?>
-
   <div class="panel-block">
     <div class="block-header">
       <h2 class="block-title">Request Types</h2>
@@ -208,7 +212,10 @@ if ($conn) {
                     <input type="hidden" name="action" value="approve">
                     <input type="hidden" name="request_id" value="<?php echo (int)$req['id']; ?>">
                     <input type="text" name="admin_response" placeholder="Optional note" style="width:120px;padding:6px;border:1px solid #d1d5db;border-radius:4px;font-size:0.75rem;">
-                    <input type="datetime-local" name="expires_at" style="width:150px;padding:6px;border:1px solid #d1d5db;border-radius:4px;font-size:0.75rem;margin-top:4px;" title="Leave empty for permanent">
+                    <div style="display:flex; flex-direction:column; gap:4px; margin-top:4px;">
+                      <input type="datetime-local" name="access_start" style="width:150px;padding:6px;border:1px solid #d1d5db;border-radius:4px;font-size:0.75rem;" title="Start date for editing permission">
+                      <input type="datetime-local" name="access_end" style="width:150px;padding:6px;border:1px solid #d1d5db;border-radius:4px;font-size:0.75rem;" title="End date for editing permission">
+                    </div>
                     <button type="submit" class="btn btn-approve" style="margin-top:4px;"><i class="fa-solid fa-check"></i> Approve</button>
                   </form>
                   <form method="post" style="display:inline;margin-left:4px;" class="reject-change-form" data-request-id="<?php echo (int)$req['id']; ?>">

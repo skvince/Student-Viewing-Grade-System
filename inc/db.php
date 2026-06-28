@@ -1,4 +1,6 @@
 <?php
+date_default_timezone_set('Asia/Manila');
+
 /**
  * Database connection helper (MySQLi)
  * Update credentials below for your environment.
@@ -369,6 +371,7 @@ $dlCheck = $conn->query("SHOW TABLES LIKE 'submission_deadlines'");
           semester VARCHAR(20) NOT NULL,
           grading_period ENUM('prelim','midterm','finals') NOT NULL,
           granted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          start_date DATETIME DEFAULT NULL,
           expires_at DATETIME DEFAULT NULL,
           revoked_at DATETIME DEFAULT NULL,
           is_active TINYINT(1) NOT NULL DEFAULT 1,
@@ -376,6 +379,12 @@ $dlCheck = $conn->query("SHOW TABLES LIKE 'submission_deadlines'");
           INDEX idx_permission_active (is_active),
           CONSTRAINT fk_permission_teacher FOREIGN KEY (teacher_id) REFERENCES teachers (id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    } else {
+        $pgStartCheck = $conn->query("SHOW COLUMNS FROM permission_grants WHERE Field = 'start_date'");
+        if ($pgStartCheck && $pgStartCheck->num_rows === 0) {
+            $conn->query("ALTER TABLE permission_grants ADD COLUMN start_date DATETIME DEFAULT NULL AFTER granted_at");
+        }
+        if ($pgStartCheck) $pgStartCheck->free();
     }
     if ($permCheck) $permCheck->free();
 

@@ -30,8 +30,9 @@ if ($conn) {
 $notifications = get_teacher_notifications($userId);
 $unreadCount = count(array_filter($notifications, fn($n) => !$n['is_read']));
 
-$message = '';
-$messageType = '';
+$flashPopupMessage = '';
+$flashPopupTitle = '';
+$flashPopupType = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf()) { header('Location: ' . $_SERVER['PHP_SELF']); exit; }
@@ -41,44 +42,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $confirmPassword = $_POST['confirm_password'] ?? '';
 
         if (!$currentPassword || !$newPassword || !$confirmPassword) {
-            $message = 'All password fields are required.';
-            $messageType = 'error';
+            $flashPopupMessage = 'All password fields are required.';
+            $flashPopupType = 'error';
+            $flashPopupTitle = 'Error';
         } elseif ($newPassword !== $confirmPassword) {
-            $message = 'New password and confirmation do not match.';
-            $messageType = 'error';
+            $flashPopupMessage = 'New password and confirmation do not match.';
+            $flashPopupType = 'error';
+            $flashPopupTitle = 'Error';
         } elseif (strlen($newPassword) < 6) {
-            $message = 'New password must be at least 6 characters long.';
-            $messageType = 'error';
+            $flashPopupMessage = 'New password must be at least 6 characters long.';
+            $flashPopupType = 'error';
+            $flashPopupTitle = 'Error';
         } else {
             $result = change_user_password($userId, 'teacher', $currentPassword, $newPassword);
             if ($result['success']) {
-                $message = 'Password changed successfully.';
-                $messageType = 'success';
+                $flashPopupMessage = 'Password changed successfully.';
+                $flashPopupType = 'success';
+                $flashPopupTitle = 'Success';
             } else {
-                $message = $result['error'];
-                $messageType = 'error';
+                $flashPopupMessage = $result['error'];
+                $flashPopupType = 'error';
+                $flashPopupTitle = 'Error';
             }
         }
     } elseif (isset($_POST['upload_picture']) && isset($_FILES['profile_picture'])) {
         $result = save_teacher_profile_picture($userId, $_FILES['profile_picture']);
         if ($result['success']) {
-            $message = 'Profile picture updated successfully.';
-            $messageType = 'success';
+            $flashPopupMessage = 'Profile picture updated successfully.';
+            $flashPopupType = 'success';
+            $flashPopupTitle = 'Success';
             $profilePicture = $result['filename'];
         } else {
-            $message = $result['error'];
-            $messageType = 'error';
+            $flashPopupMessage = $result['error'];
+            $flashPopupType = 'error';
+            $flashPopupTitle = 'Error';
         }
     } elseif (isset($_POST['remove_picture'])) {
         $ok = delete_teacher_profile_picture($userId);
         if ($ok) {
-            $message = 'Profile picture removed successfully.';
-            $messageType = 'success';
+            $flashPopupMessage = 'Profile picture removed successfully.';
+            $flashPopupType = 'success';
+            $flashPopupTitle = 'Success';
             $profilePicture = null;
             create_notification($userId, 'teacher', 'Profile Picture Removed', 'Your profile picture has been removed.', 'info', 'teacher_settings.php');
         } else {
-            $message = 'Failed to remove profile picture.';
-            $messageType = 'error';
+            $flashPopupMessage = 'Failed to remove profile picture.';
+            $flashPopupType = 'error';
+            $flashPopupTitle = 'Error';
         }
     }
 }
@@ -86,9 +96,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $activeNav = 'settings';
 ob_start();
 ?>
-<?php if ($message): ?>
-    <div class="alert alert-<?php echo $messageType; ?>"><?php echo htmlspecialchars($message); ?></div>
-<?php endif; ?>
 
 <div class="settings-grid">
     <section class="panel-block">
@@ -106,10 +113,10 @@ ob_start();
                     <button type="submit" name="upload_picture" class="btn-submit"><i class="fa-solid fa-upload"></i> Upload</button>
                 </form>
                 <?php if ($profilePicture): ?>
-                     <form method="post" onsubmit="return confirm('Remove profile picture?');">
+                     <form method="post" onsubmit="var f = this; event.preventDefault(); showConfirmDialog('Confirm', 'Remove profile picture?').then(function(r) { if (r.isConfirmed) { f.submit(); } });">
                          <?php echo csrf_field(); ?>
                          <button type="submit" name="remove_picture" class="btn-danger"><i class="fa-solid fa-trash"></i> Remove</button>
-                    </form>
+                     </form>
                 <?php endif; ?>
             </div>
         </div>

@@ -13,19 +13,32 @@ $selectedSem  = $term['semester'];
 $selectedDepartment = trim($_GET['department'] ?? '');
 
 
-$teacherSaveError = '';
+$flashPopupMessage = '';
 $editingTeacherId = 0;
 $editingTeacherData = [];
 $isEditingTeacher = false;
 $departments = [];
+$flashPopupType = '';
+$flashPopupTitle = '';
+$flashPopupMessage = '';
 
 // Credentials hint for the last created teacher.
 $lastTeacherCreated = $_SESSION['last_teacher_created'] ?? null;
 unset($_SESSION['last_teacher_created']);
 
+if ($lastTeacherCreated) {
+    $flashPopupType = 'success';
+    $flashPopupTitle = 'Success';
+    $flashPopupMessage = 'Teacher ' . $lastTeacherCreated['teacher_name'] . ' added successfully. ID: ' . $lastTeacherCreated['teacher_id'] . ' Temp Password: ' . $lastTeacherCreated['temp_password'];
+}
+
 $flashError = $_SESSION['flash_error'] ?? '';
 unset($_SESSION['flash_error']);
-$teacherSaveError = $teacherSaveError ?: $flashError;
+if ($flashError) {
+    $flashPopupType = 'error';
+    $flashPopupTitle = 'Error';
+    $flashPopupMessage = $flashError;
+}
 
 $conn = db_connect();
 if ($conn) {
@@ -45,7 +58,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_teacher'])) {
         if ($result['success']) {
             audit_log('delete_teacher');
         } else {
-            $teacherSaveError = $result['error'] ?? 'Failed to delete teacher.';
+            $flashPopupType = 'error';
+            $flashPopupTitle = 'Error';
+            $flashPopupMessage = $result['error'] ?? 'Failed to delete teacher.';
         }
     }
     header('Location: ' . $_SERVER['PHP_SELF']);
@@ -61,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_teacher'])) {
     $department = trim($_POST['department'] ?? '');
 
     if (!$teacherId || !$firstName || !$lastName) {
-        $teacherSaveError = 'First name and last name are required.';
+        $flashPopupMessage = 'First name and last name are required.';
     } else {
         $ok = update_teacher($teacherId, $firstName, $middleName, $lastName, $department ?: null, null);
         if ($ok) {
@@ -69,7 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_teacher'])) {
             header('Location: ' . $_SERVER['PHP_SELF']);
             exit;
         } else {
-            $teacherSaveError = 'Teacher update failed.';
+            $flashPopupMessage = 'Teacher update failed.';
         }
     }
 }
@@ -82,7 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_teacher'])) {
     $department = trim($_POST['department'] ?? '');
 
     if (!$firstName || !$lastName) {
-        $teacherSaveError = 'First name and last name are required.';
+        $flashPopupMessage = 'First name and last name are required.';
     } else {
         $result = create_teacher($firstName, $middleName, $lastName, $department ?: null);
         if ($result['success']) {
@@ -97,7 +112,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_teacher'])) {
             header('Location: ' . $_SERVER['PHP_SELF']);
             exit;
         } else {
-            $teacherSaveError = $result['error'];
+            $flashPopupType = 'error';
+            $flashPopupTitle = 'Error';
+            $flashPopupMessage = $result['error'];
         }
     }
 }
@@ -143,29 +160,21 @@ $isEditingTeacher = (bool) $editingTeacherData;
               <i class="fa-solid fa-magnifying-glass" style = "margin-top: 11.2px;"></i>
               <input type="text" class="search-input" id="teachers-search-input" placeholder="Search teachers..." style = "margin-top: 11.2px;" />
             </div>
-<button type="button" id="btn-add-teacher" class="btn-add" style="width: 220px; <?php echo ($teacherSaveError || $isEditingTeacher) ? 'display:none;' : ''; ?>">
+<button type="button" id="btn-add-teacher" class="btn-add" style="width: 220px; <?php echo ($flashPopupMessage || $isEditingTeacher) ? 'display:none;' : ''; ?>">
                <i class="fa-solid fa-plus"></i> Add Teacher
              </button>
            </div>
          </div>
 
-       <?php if ($lastTeacherCreated): ?>
-         <div class="alert alert-success" style="margin-bottom:24px;">
-           Teacher <strong><?php echo htmlspecialchars($lastTeacherCreated['teacher_name']); ?></strong> created successfully.
-           ID: <code><?php echo htmlspecialchars($lastTeacherCreated['teacher_id']); ?></code>
-           Temp Password: <code><?php echo htmlspecialchars($lastTeacherCreated['temp_password']); ?></code>
-         </div>
-       <?php endif; ?>
+        <?php if ($lastTeacherCreated): ?>
+        <?php endif; ?>
 
-       <div id="teacher-modal-backdrop" class="modal-backdrop" style="display:<?php echo ($teacherSaveError || $isEditingTeacher) ? 'flex' : 'none'; ?>;">
-            <div class="modal-card">
-              <button type="button" class="modal-close" id="btn-close-teacher-modal">
-                <i class="fa-solid fa-xmark"></i>
-              </button>
-              <?php if ($teacherSaveError): ?>
-                <p style="color:#b91c1c; margin-bottom: 16px;"><?php echo htmlspecialchars($teacherSaveError); ?></p>
-              <?php endif; ?>
-              <div class="request-form-header">
+            <div id="teacher-modal-backdrop" class="modal-backdrop" style="display:<?php echo ($flashPopupMessage || $isEditingTeacher) ? 'flex' : 'none'; ?>;">
+             <div class="modal-card">
+               <button type="button" class="modal-close" id="btn-close-teacher-modal">
+                 <i class="fa-solid fa-xmark"></i>
+               </button>
+               <div class="request-form-header">
                 <h3 id="form-title"><?php echo $isEditingTeacher ? 'Edit Teacher' : 'Add Teacher'; ?></h3>
                 <p id="form-subtitle"><?php echo $isEditingTeacher ? 'Update the teacher details below.' : 'Enter the teacher details below.'; ?></p>
               </div>
@@ -272,14 +281,6 @@ $isEditingTeacher = (bool) $editingTeacherData;
     </div>
   </div>
   <script>
-    const btnAddTeacher = document.getElementById('btn-add-teacher');
-    const teacherModalBackdrop = document.getElementById('teacher-modal-backdrop');
-    const btnCloseTeacherModal = document.getElementById('btn-close-teacher-modal');
-    const btnCancelTeacher = document.getElementById('btn-cancel-teacher');
-    const yearSelect = document.getElementById('global-filter-year');
-    const semSelect = document.getElementById('global-filter-sem');
-    const teacherIdField = document.getElementById('teacher-id-field');
-
     function syncGlobalFilter() {
       const year = document.getElementById('global-filter-year').value;
       const sem  = document.getElementById('global-filter-sem').value;
@@ -349,87 +350,29 @@ $isEditingTeacher = (bool) $editingTeacherData;
       });
     }
 
-    document.addEventListener('DOMContentLoaded', function() {
-      if (btnAddTeacher) {
-        btnAddTeacher.addEventListener('click', openTeacherModal);
-      }
-      if (btnCloseTeacherModal) {
-        btnCloseTeacherModal.addEventListener('click', dismissTeacherModal);
-      }
-      if (btnCancelTeacher) {
-        btnCancelTeacher.addEventListener('click', dismissTeacherModal);
-      }
-      if (teacherModalBackdrop) {
-        teacherModalBackdrop.addEventListener('click', function(e) {
-          if (e.target === teacherModalBackdrop) dismissTeacherModal();
-        });
-      }
-      if (yearSelect) {
-        yearSelect.addEventListener('change', syncGlobalFilter);
-      }
-      if (semSelect) {
-        semSelect.addEventListener('change', syncGlobalFilter);
-      }
+  document.addEventListener('DOMContentLoaded', function() {
+    const btnAddTeacher = document.getElementById('btn-add-teacher');
+    const teacherModalBackdrop = document.getElementById('teacher-modal-backdrop');
+    const btnCloseTeacherModal = document.getElementById('btn-close-teacher-modal');
+    const btnCancelTeacher = document.getElementById('btn-cancel-teacher');
 
-      document.querySelectorAll('.search-input').forEach(input => {
-        input.addEventListener('input', function() {
-          filterTeachers(this.value);
-        });
+    if (btnAddTeacher) {
+      btnAddTeacher.addEventListener('click', openTeacherModal);
+    }
+    if (btnCloseTeacherModal) {
+      btnCloseTeacherModal.addEventListener('click', dismissTeacherModal);
+    }
+    if (btnCancelTeacher) {
+      btnCancelTeacher.addEventListener('click', dismissTeacherModal);
+    }
+    if (teacherModalBackdrop) {
+      teacherModalBackdrop.addEventListener('click', function(e) {
+        if (e.target === teacherModalBackdrop) dismissTeacherModal();
       });
-
-      document.querySelectorAll('.toggle-password-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-          const userId = this.getAttribute('data-user-id');
-          if (userId) togglePassword(userId);
-        });
-      });
-
-      document.querySelectorAll('.delete-form').forEach(form => {
-        form.addEventListener('submit', function(e) {
-          e.preventDefault();
-          var self = this;
-          var msg = this.getAttribute('data-confirm') || 'Are you sure?';
-          Swal.fire({
-            title: 'Confirm Delete',
-            text: msg,
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#dc2626',
-            cancelButtonColor: '#6b7280',
-            confirmButtonText: 'Yes, Delete',
-            cancelButtonText: 'Cancel'
-          }).then(function(result) {
-            if (result.isConfirmed) {
-              self.submit();
-            }
-          });
-        });
-      });
-
-      const teacherIdValue = teacherIdField ? teacherIdField.value : '';
-      if (teacherIdValue && teacherIdValue !== '0') {
-        document.getElementById('form-title').textContent = 'Edit Teacher';
-        document.getElementById('form-subtitle').textContent = 'Update the teacher details below.';
-        const submitBtn = document.querySelector('#teacher-form button[type="submit"]');
-        submitBtn.name = 'update_teacher';
-        submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Update Teacher';
-      }
-    });
-  </script>
-
+    }
+  });
+</script>
 <?php
 $content = ob_get_clean();
 require_once __DIR__ . '/inc/app_layout.php';
-?>
-
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    <?php if ($lastTeacherCreated): ?>
-      showSuccess('Teacher <?php echo addslashes(htmlspecialchars($lastTeacherCreated['teacher_name'])); ?> added successfully.');
-    <?php endif; ?>
-    <?php if ($teacherSaveError): ?>
-      showError('<?php echo addslashes(htmlspecialchars($teacherSaveError)); ?>');
-    <?php endif; ?>
-  });
-</script>
 ?>

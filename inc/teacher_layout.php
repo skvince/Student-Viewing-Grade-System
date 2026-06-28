@@ -33,6 +33,7 @@ $settingsContent = $settingsContent ?? '';
     <link rel="icon" type="image/png" href="https://cscqcph.com/images/bg/cscqcph.png"/>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         :root {
             --bg-color: #f1f4f2;
@@ -584,18 +585,6 @@ $settingsContent = $settingsContent ?? '';
         .badge-closed { background-color: #e5e7eb; color: #374151; }
         .badge-open { background-color: #d1fae5; color: #065f46; }
 
-        .alert {
-            padding: 12px 16px;
-            border-radius: 6px;
-            margin-bottom: 16px;
-            font-size: 0.85rem;
-        }
-
-        .alert-error {
-            background-color: #fee2e2;
-            color: #991b1b;
-        }
-
         .btn-add {
             background-color: var(--primary-green);
             color: white;
@@ -1030,16 +1019,6 @@ $settingsContent = $settingsContent ?? '';
             background-color: #b91c1c;
         }
 
-        .alert-success {
-            background-color: #d1fae5;
-            color: #065f46;
-        }
-
-        .alert-info {
-            background-color: #dbeafe;
-            color: #1e40af;
-        }
-
         @media (max-width: 1024px) {
             body {
                 grid-template-columns: 1fr;
@@ -1258,11 +1237,54 @@ $settingsContent = $settingsContent ?? '';
             if (logoutBtn) {
                 logoutBtn.addEventListener('click', function(e) {
                     e.preventDefault();
-                    if (confirm('Are you sure you want to log out?')) {
-                        window.location.href = 'login.php?logout=1';
-                    }
+                    showConfirmDialog('Log Out', 'Are you sure you want to log out?').then(function(r) {
+                        if (r.isConfirmed) {
+                            window.location.href = 'login.php?logout=1';
+                        }
+                    });
                 });
             }
+
+            function showPopup(type, title, message) {
+                const configs = {
+                    success: { icon: '✅', color: '#28A745' },
+                    updated: { icon: '✏️', color: '#0D6EFD' },
+                    delete:  { icon: '🗑️', color: '#DC3545' },
+                    error:   { icon: '❌', color: '#DC3545' },
+                    warning: { icon: '⚠️', color: '#FFC107' },
+                    info:    { icon: 'ℹ️', color: '#17A2B8' }
+                };
+                const cfg = configs[type] || configs.info;
+                Swal.fire({
+                    icon: cfg.icon,
+                    title: '<strong>' + title + '</strong>',
+                    html: '<p style="font-size:1rem;color:#555;">' + message + '</p>',
+                    confirmButtonText: 'OK',
+                    confirmButtonColor: cfg.color,
+                    customClass: { popup: 'popup-alert', confirmButton: 'popup-btn' },
+                    didOpen: function() { document.querySelector('.swal2-popup').style.borderRadius = '12px'; }
+                });
+            }
+
+            function showConfirmDialog(title, message) {
+                return Swal.fire({
+                    title: '<strong>' + title + '</strong>',
+                    html: '<p style="font-size:1rem;color:#555;">' + message + '</p>',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Delete',
+                    confirmButtonColor: '#DC3545',
+                    cancelButtonText: 'Cancel',
+                    cancelButtonColor: '#6B7280',
+                    reverseButtons: true,
+                    customClass: { popup: 'popup-alert', confirmButton: 'popup-btn', cancelButton: 'popup-btn-cancel' },
+                    didOpen: function() { document.querySelector('.swal2-popup').style.borderRadius = '12px'; }
+                });
+            }
+
+            <?php if (!empty($flashPopupType) && !empty($flashPopupTitle) && !empty($flashPopupMessage)): ?>
+            showPopup('<?php echo $flashPopupType; ?>', '<?php echo addslashes($flashPopupTitle); ?>', '<?php echo addslashes($flashPopupMessage); ?>');
+            <?php endif; ?>
         });
     </script>
 </body>

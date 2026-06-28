@@ -23,6 +23,10 @@ $departments = [];
 $editingStudentId = 0;
 $editingStudentData = [];
 $isEditingStudent = false;
+$selectedDepartment = trim($_GET['department'] ?? '');
+$flashPopupType = '';
+$flashPopupTitle = '';
+$flashPopupMessage = '';
 
 $departments = get_departments();
 
@@ -65,7 +69,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
     $submittedDepartment = trim($_POST['department'] ?? '');
 
     if (!$studentId || !$firstName || !$lastName) {
-        $studentSaveError = 'First name and last name are required.';
+        $flashPopupMessage = 'First name and last name are required.';
+        $flashPopupType = 'error';
+        $flashPopupTitle = 'Error';
     } else {
         $ok = update_student($studentId, $firstName, $middleName, $lastName, $submittedSectionId ?: null, $submittedDepartment ?: null, null);
         if ($ok) {
@@ -73,7 +79,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
             header('Location: ' . $_SERVER['PHP_SELF']);
             exit;
         } else {
-            $studentSaveError = 'Student update failed.';
+            $flashPopupMessage = 'Student update failed.';
+$flashPopupType = 'error';
+$flashPopupTitle = 'Error';
         }
     }
 }
@@ -90,7 +98,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_student'])) {
     $submittedLastName = $lastName;
 
     if (!$firstName || !$lastName) {
-        $studentSaveError = 'First name and last name are required.';
+        $flashPopupMessage = 'First name and last name are required.';
+        $flashPopupType = 'error';
+        $flashPopupTitle = 'Error';
     } else {
         $result = create_student($firstName, $middleName, $lastName, $submittedSectionId ?: null, $submittedDepartment ?: null);
         if ($result['success']) {
@@ -103,7 +113,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_student'])) {
             header('Location: ' . $_SERVER['PHP_SELF']);
             exit;
         } else {
-            $studentSaveError = $result['error'];
+            $flashPopupMessage = $result['error'];
+$flashPopupType = 'error';
+$flashPopupTitle = 'Error';
         }
     }
 }
@@ -135,6 +147,12 @@ $isEditingStudent = (bool) $editingStudentData;
 $lastStudentCreated = $_SESSION['last_student_created'] ?? null;
 unset($_SESSION['last_student_created']);
 
+if ($lastStudentCreated) {
+    $flashPopupType = 'success';
+    $flashPopupTitle = 'Success';
+    $flashPopupMessage = 'Student ' . $lastStudentCreated['student_name'] . ' added successfully. ID: ' . $lastStudentCreated['student_id'] . ' Temp Password: ' . $lastStudentCreated['temp_password'];
+}
+
 $formFirstName = $editingStudentData['first_name'] ?? $submittedFirstName ?? '';
 $formMiddleName = $editingStudentData['middle_name'] ?? $submittedMiddleName ?? '';
 $formLastName = $editingStudentData['last_name'] ?? $submittedLastName ?? '';
@@ -149,37 +167,34 @@ ob_start();
       <h1 class="view-title">Students Management</h1>
       <p class="view-subtitle">Manage registered institution students</p>
 
-      <?php if ($lastStudentCreated): ?>
-      <div class="alert alert-success" style="margin-bottom:24px;">
-        Student <strong><?php echo htmlspecialchars($lastStudentCreated['student_name']); ?></strong> created successfully.
-        ID: <code><?php echo htmlspecialchars($lastStudentCreated['student_id']); ?></code>
-        Temp Password: <code><?php echo htmlspecialchars($lastStudentCreated['temp_password']); ?></code>
-      </div>
-      <?php endif; ?>
-
       <div class="panel-block">
         <div class="block-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:15px; margin-bottom:15px;">
           <h2 class="block-title" style="margin:0">Students Registry</h2>
           <div class="header-actions" style="display:flex; gap:15px; align-items:center">
-            <div class="search-wrapper" style="position:relative; min-width:250px">
-              <i class="fa-solid fa-magnifying-glass" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); color:#aaa;"></i>
-              <input type="text" id="students-table-search" class="table-search-input" placeholder="Search students..." style="width:100%; padding:6px 12px 6px 32px; border-radius:4px; border:1px solid #ccc;" />
+            <select id="department-filter" class="global-select" style="width: 220px; margin-top: 11.2px;" onchange="window.location.href='?department='+encodeURIComponent(this.value)">
+              <option value="">All Departments</option>
+              <?php foreach ($departments as $dept): ?>
+                <option value="<?php echo htmlspecialchars($dept['name']); ?>" <?php echo $selectedDepartment === $dept['name'] ? 'selected' : ''; ?>>
+                  <?php echo htmlspecialchars($dept['name']); ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+            <div class="search-wrapper">
+              <i class="fa-solid fa-magnifying-glass" style="margin-top:11.2px;"></i>
+              <input type="text" class="search-input" id="students-table-search" placeholder="Search students..." style="margin-top:11.2px;" />
             </div>
-            <button type="button" id="btn-add-student" class="btn-add" style="<?php echo $isEditingStudent ? 'display:none;' : ''; ?>">
+            <button type="button" id="btn-add-student" class="btn-add" style="width: 220px; <?php echo $isEditingStudent ? 'display:none;' : ''; ?>">
               <i class="fa-solid fa-plus"></i> Add Student
             </button>
           </div>
         </div>
 
         <div id="modal-backdrop" class="modal-backdrop" style="<?php echo $isEditingStudent ? 'display:flex;' : 'display:none;'; ?>">
-          <div id="modal-card" class="student-form-card">
-            <button type="button" class="student-form-close" id="btn-close-student-modal">
+          <div id="modal-card" class="modal-card">
+            <button type="button" class="modal-close" id="btn-close-student-modal">
               <i class="fa-solid fa-xmark"></i>
             </button>
-            <?php if ($studentSaveError): ?>
-              <p style="color:#b91c1c; margin-bottom:16px;"><?php echo htmlspecialchars($studentSaveError); ?></p>
-            <?php endif; ?>
-            <div class="student-form-header">
+            <div class="request-form-header">
               <h3 id="form-title"><?php echo $isEditingStudent ? 'Edit Student' : 'Add Student'; ?></h3>
               <p id="form-subtitle"><?php echo $isEditingStudent ? 'Update the student details below.' : 'Enter the student details below.'; ?></p>
             </div>
@@ -235,12 +250,8 @@ ob_start();
                 </select>
               </div>
               <div class="form-buttons-row card-action-row">
-                <button type="submit" id="submit-btn" name="<?php echo $isEditingStudent ? 'update_student' : 'add_student'; ?>" class="btn-submit">
-                  <i class="fa-solid fa-floppy-disk"></i> <?php echo $isEditingStudent ? 'Update Student' : 'Register'; ?>
-                </button>
-                <?php if ($isEditingStudent): ?>
-                  <button type="button" class="btn-cancel" id="btn-cancel-student">Cancel</button>
-                <?php endif; ?>
+                <button type="submit" id="submit-btn" name="<?php echo $isEditingStudent ? 'update_student' : 'add_student'; ?>" class="btn-submit"><?php echo $isEditingStudent ? 'Save Student' : 'Save Student'; ?></button>
+                <button type="button" class="btn-cancel" id="btn-cancel-student">Cancel</button>
               </div>
             </form>
           </div>
@@ -262,12 +273,28 @@ ob_start();
               <?php
               $conn = db_connect();
               if ($conn) {
-                  $res = $conn->query(
-                      "SELECT s.id, s.student_id, s.first_name, s.middle_name, s.last_name, s.section_id, s.department, sec.name AS section_name, sec.section_code " .
+                  $where = [];
+                  $params = [];
+                  $types = '';
+                  if ($selectedDepartment !== '') {
+                      $where[] = 's.department = ?';
+                      $params[] = $selectedDepartment;
+                      $types .= 's';
+                  }
+                  $sql = "SELECT s.id, s.student_id, s.first_name, s.middle_name, s.last_name, s.section_id, s.department, sec.name AS section_name, sec.section_code " .
                       "FROM students s " .
-                      "LEFT JOIN sections sec ON s.section_id = sec.id " .
-                      "ORDER BY s.last_name ASC, s.first_name ASC"
-                  );
+                      "LEFT JOIN sections sec ON s.section_id = sec.id";
+                  if ($where) {
+                      $sql .= ' WHERE ' . implode(' AND ', $where);
+                  }
+                  $sql .= ' ORDER BY s.last_name ASC, s.first_name ASC';
+                  $stmt = $conn->prepare($sql);
+                  if ($params) {
+                      $stmt->bind_param($types, ...$params);
+                  }
+                  $stmt->execute();
+                  $res = $stmt->get_result();
+                  $stmt->close();
                   if ($res) {
                       if ($res->num_rows) {
                           while ($row = $res->fetch_assoc()) {
@@ -281,13 +308,13 @@ ob_start();
                               echo '<td>' . htmlspecialchars($sectionDisplay) . '</td>';
                               echo '<td><div class="password-cell"><span class="password-dots" id="pwd-dots-' . intval($row['id']) . '">••••••••</span><span class="password-text" id="pwd-text-' . intval($row['id']) . '" style="display:none;">' . $passwordHint . '</span><button type="button" class="icon-button toggle-password-btn" data-user-id="' . intval($row['id']) . '" title="Show/Hide password"><i class="fa-solid fa-eye" id="pwd-eye-' . intval($row['id']) . '"></i></button></div></td>';
                               echo '<td class="actions-cell">';
-                              echo '<a href="?edit_student=' . intval($row['id']) . '" class="icon-button" title="Edit student" style="text-decoration:none;"><i class="fa-solid fa-pen-to-square" style="color:#10b981;"></i></a>';
+                              echo '<a href="?edit_student=' . intval($row['id']) . '&department=' . urlencode($selectedDepartment) . '" class="icon-button" title="Edit student" style="text-decoration:none;"><i class="fa-solid fa-pen-to-square" style="color:#10b981;"></i></a>';
                               echo '<form method="post" class="delete-form" data-confirm="Delete this student?">' . csrf_field() . '<input type="hidden" name="delete_student" value="1"><input type="hidden" name="student_id" value="' . intval($row['id']) . '"><button type="submit" class="icon-button" title="Delete student"><i class="fa-solid fa-trash-can"></i></button></form>';
                               echo '</td>';
                               echo '</tr>';
                           }
                       } else {
-                          echo '<tr><td colspan="6" style="text-align:center;color:#6b7280;padding:18px;">No students found.</td></tr>';
+                          echo '<tr><td colspan="6" style="text-align:center;color:#6b7280;padding:18px;">No students found' . ($selectedDepartment ? ' in ' . htmlspecialchars($selectedDepartment) : '') . '.</td></tr>';
                       }
                   } else {
                       echo '<tr><td colspan="6" style="text-align:center;color:#6b7280;padding:18px;">Query error.</td></tr>';
@@ -330,6 +357,17 @@ ob_start();
         resetStudentForm();
       }
 
+      function dismissStudentModal() {
+        const studentIdValue = studentIdField ? studentIdField.value : '';
+        if (studentIdValue && studentIdValue !== '0') {
+          var url = new URL(window.location);
+          url.searchParams.delete('edit_student');
+          window.location.href = url.toString();
+        } else {
+          closeStudentModal();
+        }
+      }
+
       function editStudent(id, firstName, middleName, lastName, department, sectionId) {
         document.getElementById('student-id-field').value = id;
         document.getElementById('first_name').value = firstName;
@@ -339,7 +377,7 @@ ob_start();
         document.getElementById('section_id').value = sectionId || '';
         if (formTitle) formTitle.textContent = 'Edit Student';
         if (formSubtitle) formSubtitle.textContent = 'Update the student details below.';
-        if (submitBtn) { submitBtn.name = 'update_student'; submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Update Student'; }
+        if (submitBtn) { submitBtn.name = 'update_student'; submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Student'; }
         if (formActionField) formActionField.value = 'update_student';
         if (modalBackdrop) modalBackdrop.style.display = 'flex';
         if (btnAddStudent) btnAddStudent.style.display = 'none';
@@ -350,7 +388,7 @@ ob_start();
         document.getElementById('student-id-field').value = '';
         if (formTitle) formTitle.textContent = 'Add Student';
         if (formSubtitle) formSubtitle.textContent = 'Enter the student details below.';
-        if (submitBtn) { submitBtn.name = 'add_student'; submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Register'; }
+        if (submitBtn) { submitBtn.name = 'add_student'; submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Student'; }
         if (formActionField) formActionField.value = 'add_student';
       }
 
@@ -386,14 +424,14 @@ ob_start();
           btnAddStudent.addEventListener('click', openStudentModal);
         }
         if (btnCloseStudentModal) {
-          btnCloseStudentModal.addEventListener('click', closeStudentModal);
+          btnCloseStudentModal.addEventListener('click', dismissStudentModal);
         }
         if (btnCancelStudent) {
-          btnCancelStudent.addEventListener('click', closeStudentModal);
+          btnCancelStudent.addEventListener('click', dismissStudentModal);
         }
         if (modalBackdrop) {
           modalBackdrop.addEventListener('click', function(e) {
-            if (e.target === modalBackdrop) closeStudentModal();
+            if (e.target === modalBackdrop) dismissStudentModal();
           });
         }
         if (yearSelect) {
@@ -423,7 +461,9 @@ ob_start();
         document.querySelectorAll('.delete-form').forEach(function(form) {
           form.addEventListener('submit', function(e) {
             const msg = this.getAttribute('data-confirm') || 'Are you sure?';
-            if (!confirm(msg)) e.preventDefault();
+            showConfirmDialog('Delete Record?', msg).then(function(result) {
+              if (!result.isConfirmed) e.preventDefault();
+            });
           });
         });
 
@@ -431,7 +471,7 @@ ob_start();
         if (studentIdFieldVal && studentIdFieldVal !== '0') {
           if (formTitle) formTitle.textContent = 'Edit Student';
           if (formSubtitle) formSubtitle.textContent = 'Update the student details below.';
-          if (submitBtn) { submitBtn.name = 'update_student'; submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Update Student'; }
+          if (submitBtn) { submitBtn.name = 'update_student'; submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Student'; }
         }
       });
     </script>

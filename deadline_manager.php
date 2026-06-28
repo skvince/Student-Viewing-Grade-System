@@ -19,8 +19,9 @@ $term = get_global_term();
 $selectedYear = $_GET['global_year'] ?? $term['year'];
 $selectedSem  = $_GET['global_sem']  ?? $term['semester'];
 
-$message     = '';
-$messageType = '';
+$flashPopupType = '';
+$flashPopupTitle = '';
+$flashPopupMessage = '';
 
 // ── Parse datetime-local (YYYY-MM-DDTHH:MM) → 'Y-m-d H:i:s' ─────────────────
 function parse_dt(string $raw): ?string {
@@ -58,31 +59,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($status === 'open' || $status === 'closed') {
 
             if ($startRaw === '') {
-                $message     = 'Open Date is required.';
-                $messageType = 'error';
+                $flashPopupMessage     = 'Open Date is required.';
+                $flashPopupType = 'error';
             } elseif (!$startFormatted) {
-                $message     = 'Open Date could not be read — please re-enter it.';
-                $messageType = 'error';
+                $flashPopupMessage     = 'Open Date could not be read — please re-enter it.';
+                $flashPopupType = 'error';
             } elseif ($endRaw === '') {
-                $message     = 'Close Date is required.';
-                $messageType = 'error';
+                $flashPopupMessage     = 'Close Date is required.';
+                $flashPopupType = 'error';
             } elseif (!$endFormatted) {
-                $message     = 'Close Date could not be read — please re-enter it.';
-                $messageType = 'error';
+                $flashPopupMessage     = 'Close Date could not be read — please re-enter it.';
+                $flashPopupType = 'error';
             } elseif (strtotime($startFormatted) >= strtotime($endFormatted)) {
-                $message     = 'Close Date must be later than Open Date.';
-                $messageType = 'error';
+                $flashPopupMessage     = 'Close Date must be later than Open Date.';
+                $flashPopupType = 'error';
             } else {
                 $result = set_deadline($selectedYear, $selectedSem, $gradingPeriod,
                                        $startFormatted, $endFormatted, $status, null);
                 if ($result) {
                     audit_log('set_deadline_' . $gradingPeriod,
                               $_SESSION['user_id'], $gradingPeriod, $selectedYear, $selectedSem);
-                    $message     = ucfirst($gradingPeriod) . ' deadline saved successfully.';
-                    $messageType = 'success';
+                    $flashPopupMessage     = ucfirst($gradingPeriod) . ' deadline saved successfully.';
+                    $flashPopupType = 'success';
                 } else {
-                    $message     = 'Failed to save deadline. Please try again.';
-                    $messageType = 'error';
+                    $flashPopupMessage     = 'Failed to save deadline. Please try again.';
+                    $flashPopupType = 'error';
                     error_log('set_deadline failed for ' . $gradingPeriod
                         . ' in ' . $selectedYear . ' ' . $selectedSem
                         . ' start=' . $startRaw . ' end=' . $endRaw . ' status=' . $status);
@@ -92,19 +93,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($status === 'extended') {
 
             if (empty($extendedFormatted)) {
-                $message     = 'Extended Until date is required.';
-                $messageType = 'error';
+                $flashPopupMessage     = 'Extended Until date is required.';
+                $flashPopupType = 'error';
             } else {
                 $result = set_deadline($selectedYear, $selectedSem, $gradingPeriod,
                                        $startFormatted, $endFormatted, 'extended', $extendedFormatted);
                 if ($result) {
                     audit_log('extend_deadline_' . $gradingPeriod,
                               $_SESSION['user_id'], $gradingPeriod, $selectedYear, $selectedSem);
-                    $message     = ucfirst($gradingPeriod) . ' deadline extended successfully.';
-                    $messageType = 'success';
+                    $flashPopupMessage     = ucfirst($gradingPeriod) . ' deadline extended successfully.';
+                    $flashPopupType = 'success';
                 } else {
-                    $message     = 'Failed to extend deadline. Please try again.';
-                    $messageType = 'error';
+                    $flashPopupMessage     = 'Failed to extend deadline. Please try again.';
+                    $flashPopupType = 'error';
                 }
             }
         }
@@ -120,11 +121,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($result) {
             audit_log('reopen_deadline_' . $gradingPeriod,
                       $_SESSION['user_id'], $gradingPeriod, $selectedYear, $selectedSem);
-            $message     = ucfirst($gradingPeriod) . ' deadline reopened successfully.';
-            $messageType = 'success';
+            $flashPopupMessage     = ucfirst($gradingPeriod) . ' deadline reopened successfully.';
+            $flashPopupType = 'success';
         } else {
-            $message     = 'Failed to reopen deadline. Please try again.';
-            $messageType = 'error';
+            $flashPopupMessage     = 'Failed to reopen deadline. Please try again.';
+            $flashPopupType = 'error';
         }
     }
 
@@ -141,12 +142,6 @@ foreach ($deadlines as $d) {
 <div class="tab-content" style="display: block;">
   <h1 class="view-title">Grade Deadlines</h1>
   <p class="view-subtitle">Manage submission deadlines for each grading period</p>
-
-  <?php if ($message): ?>
-    <div class="alert alert-<?php echo htmlspecialchars($messageType); ?>" style="margin-bottom:24px;">
-      <?php echo htmlspecialchars($message); ?>
-    </div>
-  <?php endif; ?>
 
   <!-- ── Set Deadlines ──────────────────────────────────────────────────────── -->
   <div class="panel-block">

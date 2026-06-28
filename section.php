@@ -19,8 +19,9 @@ $selectedSem  = $term['semester'];
 
 $sections = [];
 $departments = [];
-$saveError = '';
-$saveSuccess = '';
+$flashPopupType = '';
+$flashPopupTitle = '';
+$flashPopupMessage = '';
 
 $conn = db_connect();
 if ($conn) {
@@ -48,14 +49,14 @@ if ($conn) {
                     header('Location: ' . $_SERVER['PHP_SELF']);
                     exit;
                 } else {
-                    $saveError = 'Department save failed: ' . $stmt->error;
+                    $flashPopupMessage = 'Department save failed: ' . $stmt->error;
                     $stmt->close();
                 }
             } else {
-                $saveError = 'Department prepare failed: ' . $conn->error;
+                $flashPopupMessage = 'Department prepare failed: ' . $conn->error;
             }
         } else {
-            $saveError = 'Department code and name are required.';
+            $flashPopupMessage = 'Department code and name are required.';
         }
     }
 
@@ -74,14 +75,14 @@ if ($conn) {
                     header('Location: ' . $_SERVER['PHP_SELF']);
                     exit;
                 } else {
-                    $saveError = 'Department update failed: ' . $stmt->error;
+                    $flashPopupMessage = 'Department update failed: ' . $stmt->error;
                     $stmt->close();
                 }
             } else {
-                $saveError = 'Department update prepare failed: ' . $conn->error;
+                $flashPopupMessage = 'Department update prepare failed: ' . $conn->error;
             }
         } else {
-            $saveError = 'Department code and name are required.';
+            $flashPopupMessage = 'Department code and name are required.';
         }
     }
 
@@ -107,7 +108,7 @@ if ($conn) {
                     audit_log('delete_department');
                 }
             } else {
-                $saveError = 'Cannot delete: department is in use by sections.';
+                $flashPopupMessage = 'Cannot delete: department is in use by sections.';
             }
         }
         header('Location: ' . $_SERVER['PHP_SELF']);
@@ -137,14 +138,14 @@ if ($conn) {
                     header('Location: ' . $_SERVER['PHP_SELF']);
                     exit;
                 } else {
-                    $saveError = 'Section save failed: ' . $stmt->error;
+                    $flashPopupMessage = 'Section save failed: ' . $stmt->error;
                     $stmt->close();
                 }
             } else {
-                $saveError = 'Section prepare failed: ' . $conn->error;
+                $flashPopupMessage = 'Section prepare failed: ' . $conn->error;
             }
         } else {
-            $saveError = 'Section name is required.';
+            $flashPopupMessage = 'Section name is required.';
         }
     }
 
@@ -171,14 +172,14 @@ if ($conn) {
                     header('Location: ' . $_SERVER['PHP_SELF']);
                     exit;
                 } else {
-                    $saveError = 'Section update failed: ' . $stmt->error;
+                    $flashPopupMessage = 'Section update failed: ' . $stmt->error;
                     $stmt->close();
                 }
             } else {
-                $saveError = 'Section update prepare failed: ' . $conn->error;
+                $flashPopupMessage = 'Section update prepare failed: ' . $conn->error;
             }
         } else {
-            $saveError = 'Section name is required.';
+            $flashPopupMessage = 'Section name is required.';
         }
     }
 
@@ -204,7 +205,7 @@ if ($conn) {
                     audit_log('delete_section');
                 }
             } else {
-                $saveError = 'Cannot delete: section has assigned students.';
+                $flashPopupMessage = 'Cannot delete: section has assigned students.';
             }
         }
         header('Location: ' . $_SERVER['PHP_SELF']);
@@ -282,12 +283,6 @@ if ($conn) {
     <div class="tab-content" style="display: block;">
       <h1 class="view-title">Section & Department</h1>
       <div class="view-subtitle">Institutional Divisions</div>
-
-<?php if ($saveError): ?>
-      <div style="background-color: #fde8e8; border: 1px solid #dc2626; color: #991b1b; padding: 16px; border-radius: 8px; margin-bottom: 24px;">
-        <strong>Error:</strong> <?php echo htmlspecialchars($saveError); ?>
-      </div>
-<?php endif; ?>
 
       <!-- Departments Panel Block -->
       <div class="panel-block">
@@ -624,7 +619,9 @@ if (count($sections)) {
       document.querySelectorAll('.delete-form').forEach(form => {
         form.addEventListener('submit', function(e) {
           const msg = this.getAttribute('data-confirm') || 'Are you sure?';
-          if (!confirm(msg)) e.preventDefault();
+          showConfirmDialog('Delete Record?', msg).then(function(result) {
+            if (!result.isConfirmed) e.preventDefault();
+          });
         });
       });
 

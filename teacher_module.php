@@ -286,7 +286,6 @@ ob_start();
     <p class="view-subtitle"><?php echo htmlspecialchars("$schoolYear | $semester"); ?></p>
 
     <?php if (isset($_GET['err']) && $_GET['err'] === 'locked'): ?>
-        <div class="alert alert-error" style="margin-bottom:24px;"><i class="fa-solid fa-lock"></i> <strong>Submission locked.</strong> This grading period is currently closed for <?php echo htmlspecialchars($schoolYear . ' ' . $semester); ?>.</div>
     <?php endif; ?>
 
     <?php
@@ -320,7 +319,6 @@ ob_start();
         </div>
 
         <?php if (!$anyOpen): ?>
-            <div class="alert alert-error" style="margin-bottom:16px;"><i class="fa-solid fa-lock"></i> All grading periods are currently closed. Please contact the administrator to open them.</div>
         <?php endif; ?>
 
         <div class="grade-submission-wrapper">
@@ -386,6 +384,12 @@ require_once __DIR__ . '/inc/teacher_layout.php';
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    <?php if (isset($_GET['err']) && $_GET['err'] === 'locked'): ?>
+    showPopup('error', 'Error', 'Submission locked. This grading period is currently closed for <?php echo htmlspecialchars($schoolYear . ' ' . $semester); ?>.');
+    <?php endif; ?>
+    <?php if (isset($anyOpen) && !$anyOpen): ?>
+    showPopup('warning', 'Warning', 'All grading periods are currently closed. Please contact the administrator to open them.');
+    <?php endif; ?>
     const btnExport = document.getElementById('btn-export-grades');
     const btnImport = document.getElementById('btn-import-grades');
     const importWrapper = document.getElementById('import-form-wrapper');

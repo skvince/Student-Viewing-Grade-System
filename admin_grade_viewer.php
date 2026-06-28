@@ -24,8 +24,9 @@ $filterDept   = $_GET['filter_dept']   ?? '';
 $searchQuery  = trim($_GET['search']     ?? '');
 $selectedStudentId = isset($_GET['student_id']) ? (int)$_GET['student_id'] : 0;
 
-$message = '';
-$messageType = '';
+$flashPopupType = '';
+$flashPopupTitle = '';
+$flashPopupMessage = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf()) { header('Location: ' . $_SERVER['PHP_SELF']); exit; }
@@ -38,17 +39,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $confirmAction = trim($_POST['confirm_action'] ?? '');
 
     if ($confirmAction !== 'YES') {
-        $message = 'Confirmation required.';
-        $messageType = 'error';
+        $flashPopupMessage = 'Confirmation required.';
+        $flashPopupType = 'error';
     } elseif (!$postStudentId || !$postSubjectId || !$postYear || !$postSem || !$period || $newGrade === '') {
-        $message = 'All grade fields are required.';
-        $messageType = 'error';
+        $flashPopupMessage = 'All grade fields are required.';
+        $flashPopupType = 'error';
     } elseif (!in_array($period, ['prelim','midterm','finals'], true)) {
-        $message = 'Invalid grading period.';
-        $messageType = 'error';
+        $flashPopupMessage = 'Invalid grading period.';
+        $flashPopupType = 'error';
     } elseif (!is_numeric($newGrade) || $newGrade < 0 || $newGrade > 100) {
-        $message = 'Grade must be a number between 0 and 100.';
-        $messageType = 'error';
+        $flashPopupMessage = 'Grade must be a number between 0 and 100.';
+        $flashPopupType = 'error';
     } else {
         $conn = db_connect();
         if ($conn) {
@@ -106,11 +107,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $sjStmt->close();
                 }
                 audit_log('admin_grade_override', $_SESSION['user_id'], $period, $postYear, $postSem, $gradeId, null, $postSubjectId, null);
-                $message = 'Grade updated successfully.';
-                $messageType = 'success';
+                $flashPopupMessage = 'Grade updated successfully.';
+                $flashPopupType = 'success';
             } else {
-                $message = 'Failed to save grade.';
-                $messageType = 'error';
+                $flashPopupMessage = 'Failed to save grade.';
+                $flashPopupType = 'error';
             }
             $conn->close();
         }
@@ -121,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if (isset($_POST['ajax'])) {
         header('Content-Type: application/json');
-        echo json_encode(['success' => ($messageType === 'success'), 'message' => $message]);
+        echo json_encode(['success' => ($flashPopupType === 'success'), 'message' => $flashPopupMessage]);
         exit;
     }
 }
@@ -357,7 +358,7 @@ if ($selectedStudentId) {
         input.addEventListener('change', function() {
           const val = parseFloat(this.value);
           if (isNaN(val) || val < 0 || val > 100) {
-            alert('Grade must be between 0 and 100.');
+            showPopup('warning', 'Warning', 'Grade must be between 0 and 100.');
             this.value = '';
           }
         });
@@ -449,7 +450,7 @@ if ($selectedStudentId) {
         input.addEventListener('blur', function() {
           const val = parseFloat(this.value);
           if (isNaN(val) || val < 0 || val > 100) {
-            alert('Grade must be between 0 and 100.');
+            showPopup('warning', 'Warning', 'Grade must be between 0 and 100.');
             this.value = '';
             return;
           }
@@ -509,14 +510,14 @@ require_once __DIR__ . '/inc/app_layout.php';
   function printStudentGrade() {
     const gradeCard = document.querySelector('.panel-block .grade-record-card');
     if (!gradeCard) {
-      alert('No grade record to print.');
+      showPopup('warning', 'Warning', 'No grade record to print.');
       return;
     }
 
     const title = 'Student Grade - <?= addslashes($selectedStudent ? ($selectedStudent['student_id'] ?? $selectedStudent['id']) : '') ?>';
     const printWindow = window.open('', '_blank', 'width=900,height=700');
     if (!printWindow) {
-      alert('Popup blocked. Allow popups to print.');
+      showPopup('warning', 'Warning', 'Popup blocked. Allow popups to print.');
       return;
     }
 

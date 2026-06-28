@@ -14,7 +14,9 @@ $activeSectionId = 0;
 $activeSubjectId = 0;
 $sections = [];
 $requests = [];
-$saveError = '';
+$flashPopupType = '';
+$flashPopupTitle = '';
+$flashPopupMessage = '';
 
 $term = get_global_term();
 $schoolYear = $term['year'];
@@ -105,14 +107,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $conn2 = db_connect();
         if ($conn2) {
             $ok = save_grade_change_request($userId, $reqSectionId, $reqSubjectId, $schoolYear, $semester, $reqPeriod, $reqReason);
-            if (!$ok) $saveError = 'Failed to submit request.';
+            if (!$ok) { $flashPopupType = 'error'; $flashPopupTitle = 'Error'; $flashPopupMessage = 'Failed to submit request.'; }
             $conn2->close();
         }
     } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $saveError = 'Please fill in all required fields.';
+        $flashPopupType = 'error'; $flashPopupTitle = 'Error'; $flashPopupMessage = 'Please fill in all required fields.';
     }
 
-    if (!$saveError) {
+    if (!$flashPopupMessage) {
         // Redirect to the same page to prevent resubmission, preserving the school year and semester parameters.
         header('Location: ' . $_SERVER['PHP_SELF'] . '?view=requests&global_year=' . urlencode($schoolYear) . '&global_sem=' . urlencode($semester) . '&success=1');
         exit;
@@ -174,9 +176,6 @@ ob_start();
         </div>
         <form method="post" id="request-form">
             <?php echo csrf_field(); ?>
-            <?php if ($saveError): ?>
-                <p style="color:#b91c1c; margin-bottom: 16px;"><?php echo htmlspecialchars($saveError); ?></p>
-            <?php endif; ?>
             <div class="form-group">
                 <label for="request-period">Grading Period</label>
                 <select name="request_period" id="request-period" class="form-control" required>
@@ -373,11 +372,11 @@ require_once __DIR__ . '/inc/teacher_layout.php';
 
 <script>
   document.addEventListener('DOMContentLoaded', function() {
-    <?php if ($saveError): ?>
-      showError('<?php echo addslashes(htmlspecialchars($saveError)); ?>');
+    <?php if ($flashPopupMessage): ?>
+      showPopup('<?php echo $flashPopupType; ?>', '<?php echo addslashes($flashPopupTitle); ?>', '<?php echo addslashes($flashPopupMessage); ?>');
     <?php endif; ?>
     <?php if (isset($_GET['success'])): ?>
-      showAlert('success', 'Success', 'Your request was submitted successfully.');
+      showPopup('success', 'Success', 'Your request was submitted successfully.');
     <?php endif; ?>
   });
 </script>

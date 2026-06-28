@@ -122,8 +122,6 @@ th:last-child,.actions-cell{text-align:center;width:100px;min-width:100px}
 .modal-close{position:absolute;top:18px;right:18px;background:0 0;border:none;color:#6b7280;font-size:1.1rem;cursor:pointer;padding:8px}
 .status-badge{font-size:.72rem;font-weight:800;text-transform:uppercase;padding:4px 12px;border-radius:50px;display:inline-block;letter-spacing:.5px}
 .badge-pass{background:#def7ec;color:#03543f}.badge-fail{background:#fde8e8;color:#9b1c1c}.badge-pending{background:#fef3c7;color:#92400e}.badge-approved{background:#d1fae5;color:#065f46}.badge-rejected{background:#fee2e2;color:#991b1b}.badge-closed{background:#e5e7eb;color:#374151}.badge-open{background:#d1fae5;color:#065f46}.badge-extended{background:#fef3c7;color:#92400e}
-.alert{padding:12px 16px;border-radius:6px;margin-bottom:16px;font-size:.85rem}
-.alert-error{background:#fee2e2;color:#991b1b}
 .btn-add{background:var(--primary-green);color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:.85rem;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap;transition:background .2s}
 .btn-add:hover{background:var(--primary-green-hover)}
 .search-wrapper{position:relative;display:flex;align-items:center;margin-bottom:12px}
@@ -381,6 +379,55 @@ th:last-child,.actions-cell{text-align:center;width:100px;min-width:100px}
 </div>
 
 <script>
+function showPopup(type, title, message) {
+    const configs = {
+        success: { icon: '✅', color: '#28A745', title: 'Success' },
+        updated: { icon: '✏️', color: '#0D6EFD', title: 'Updated' },
+        delete:  { icon: '🗑️', color: '#DC3545', title: 'Deleted!' },
+        error:   { icon: '❌', color: '#DC3545', title: 'Error' },
+        warning: { icon: '⚠️', color: '#FFC107', title: 'Warning' },
+        info:    { icon: 'ℹ️', color: '#17A2B8', title: 'Information' }
+    };
+    const cfg = configs[type] || configs.info;
+    const displayTitle = title || cfg.title;
+    Swal.fire({
+        icon: cfg.icon,
+        title: '<strong>' + displayTitle + '</strong>',
+        html: '<p style="font-size:1rem;color:#555;">' + message + '</p>',
+        confirmButtonText: 'OK',
+        confirmButtonColor: cfg.color,
+        customClass: { popup: 'popup-alert', confirmButton: 'popup-btn' },
+        didOpen: function() { document.querySelector('.swal2-popup').style.borderRadius = '12px'; }
+    });
+}
+
+function showConfirmDialog(title, message) {
+    return Swal.fire({
+        title: '<strong>' + title + '</strong>',
+        html: '<p style="font-size:1rem;color:#555;">' + message + '</p>',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Delete',
+        confirmButtonColor: '#DC3545',
+        cancelButtonText: 'Cancel',
+        cancelButtonColor: '#6B7280',
+        reverseButtons: true,
+        customClass: { popup: 'popup-alert', confirmButton: 'popup-btn', cancelButton: 'popup-btn-cancel' },
+        didOpen: function() { document.querySelector('.swal2-popup').style.borderRadius = '12px'; }
+    });
+}
+
+<?php
+if (empty($flashPopupType) && !empty($_SESSION['flash_popup_type'])) {
+    $flashPopupType = $_SESSION['flash_popup_type'];
+    $flashPopupTitle = $_SESSION['flash_popup_title'] ?? '';
+    $flashPopupMessage = $_SESSION['flash_popup_message'] ?? '';
+    unset($_SESSION['flash_popup_type'], $_SESSION['flash_popup_title'], $_SESSION['flash_popup_message']);
+}
+if (!empty($flashPopupType) && !empty($flashPopupMessage)): ?>
+showPopup('<?php echo $flashPopupType; ?>', '<?php echo addslashes($flashPopupTitle ?? ''); ?>', '<?php echo addslashes($flashPopupMessage); ?>');
+<?php endif; ?>
+
 document.addEventListener('DOMContentLoaded',function(){
   var y=document.getElementById('global-filter-year'),s=document.getElementById('global-filter-sem');
   function sync(){var u=new URL(window.location);u.searchParams.set('global_year',y.value);u.searchParams.set('global_sem',s.value);u.searchParams.delete('school_year');u.searchParams.delete('semester');u.searchParams.delete('academic_year');window.location.href=u.toString()}
@@ -389,7 +436,7 @@ document.addEventListener('DOMContentLoaded',function(){
   var t=document.getElementById('sidebar-toggle'),sb=document.querySelector('.sidebar');
   if(t&&sb){t.addEventListener('click',function(){sb.classList.toggle('is-open')})}
   var lb=document.getElementById('btn-logout');
-  if(lb){lb.addEventListener('click',function(e){e.preventDefault();if(confirm('Are you sure you want to log out?'))window.location.href='login.php?logout=1'})}
+  if(lb){lb.addEventListener('click',function(e){e.preventDefault();showConfirmDialog('Log Out','Are you sure you want to log out?').then(function(r){if(r.isConfirmed)window.location.href='login.php?logout=1'})})}
 });
 </script>
 </body>

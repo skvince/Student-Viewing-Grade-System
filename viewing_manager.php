@@ -16,8 +16,9 @@ $term = get_global_term();
 $selectedYear = $term['year'];
 $selectedSem  = $term['semester'];
 
-$message = '';
-$messageType = '';
+$flashPopupType = '';
+$flashPopupTitle = '';
+$flashPopupMessage = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf()) { header('Location: ' . $_SERVER['PHP_SELF']); exit; }
@@ -34,22 +35,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'save_schedule') {
         if (!$schoolYear || !$semester || !$startDate || !$endDate || !$startDt || !$endDt) {
-            $message = 'All fields are required. End date must be after start date.';
-            $messageType = 'error';
+            $flashPopupMessage = 'All fields are required. End date must be after start date.';
+            $flashPopupType = 'error';
         } elseif ($endDt <= $startDt) {
-            $message = 'End date must be after start date.';
-            $messageType = 'error';
+            $flashPopupMessage = 'End date must be after start date.';
+            $flashPopupType = 'error';
         } else {
            $startFormatted = $startDt->format('Y-m-d H:i:s');
           $endFormatted = $endDt->format('Y-m-d H:i:s');
             $result = save_grade_viewing_schedule($schoolYear, $semester, $startFormatted, $endFormatted, $isActive);
             if ($result !== null) {
                 audit_log('save_viewing_schedule', $_SESSION['user_id'], null, $schoolYear, $semester);
-                $message = 'Grade viewing schedule saved successfully.';
-                $messageType = 'success';
+                $flashPopupMessage = 'Grade viewing schedule saved successfully.';
+                $flashPopupType = 'success';
             } else {
-                $message = 'Failed to save schedule.';
-                $messageType = 'error';
+                $flashPopupMessage = 'Failed to save schedule.';
+                $flashPopupType = 'error';
             }
         }
     } elseif ($action === 'toggle_schedule' && $scheduleId) {
@@ -57,11 +58,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($ok) {
             $statusLabel = !$isActive ? 'enabled' : 'disabled';
             audit_log('toggle_viewing_schedule', $_SESSION['user_id'], null, null, null, null, null, null, $scheduleId);
-            $message = 'Schedule ' . $statusLabel . ' successfully.';
-            $messageType = 'success';
+            $flashPopupMessage = 'Schedule ' . $statusLabel . ' successfully.';
+            $flashPopupType = 'success';
         } else {
-            $message = 'Failed to update schedule.';
-            $messageType = 'error';
+            $flashPopupMessage = 'Failed to update schedule.';
+            $flashPopupType = 'error';
         }
     }
 }
@@ -77,8 +78,6 @@ $selectedYearSchedules = $schedules;
 ?>
 
     <div class="tab-content" style="display: block;">
-      <?php if ($message): ?><div class="alert alert-<?= $messageType ?>"><?= htmlspecialchars($message) ?></div><?php endif; ?>
-
       <h1 class="view-title">Grade Viewing Schedules</h1>
       <p class="view-subtitle">Manage when students can view their grades</p>
 
@@ -291,21 +290,12 @@ document.addEventListener('DOMContentLoaded', function() {
            var id = this.getAttribute('data-id');
            var currentActive = this.getAttribute('data-active');
            var action = currentActive === '1' ? 'disable' : 'enable';
-           var self = this;
-           Swal.fire({
-             title: 'Confirm ' + action.charAt(0).toUpperCase() + action.slice(1),
-             text: 'Are you sure you want to ' + action + ' this schedule?',
-             icon: 'question',
-             showCancelButton: true,
-             confirmButtonColor: '#0e4429',
-             cancelButtonColor: '#6b7280',
-             confirmButtonText: 'Yes, ' + action.charAt(0).toUpperCase() + action.slice(1),
-             cancelButtonText: 'Cancel'
-           }).then(function(result) {
-             if (result.isConfirmed) {
-               toggleViewingSchedule(id, currentActive);
-             }
-           });
+            var self = this;
+            showConfirmDialog('Confirm ' + action.charAt(0).toUpperCase() + action.slice(1), 'Are you sure you want to ' + action + ' this schedule?').then(function(result) {
+              if (result.isConfirmed) {
+                toggleViewingSchedule(id, currentActive);
+              }
+            });
          });
        });
      });
@@ -314,13 +304,4 @@ document.addEventListener('DOMContentLoaded', function() {
 <?php
 $content = ob_get_clean();
 require_once __DIR__ . '/inc/app_layout.php';
-?>
-
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    <?php if ($message): ?>
-      showAlert('<?php echo $messageType; ?>', '<?php echo $messageType === 'success' ? 'Success' : ($messageType === 'error' ? 'Error' : 'Notice'); ?>', '<?php echo addslashes(htmlspecialchars($message)); ?>');
-    <?php endif; ?>
-  });
-</script>
 ?>

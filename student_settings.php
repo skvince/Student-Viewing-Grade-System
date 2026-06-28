@@ -28,8 +28,8 @@ if ($conn) {
 }
 
 
-$message = '';
-$messageType = '';
+$flashPopupMessage = '';
+$flashPopupType = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
     if (!verify_csrf()) { header('Location: ' . $_SERVER['PHP_SELF']); exit; }
@@ -38,22 +38,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
     $confirmPassword = $_POST['confirm_password'] ?? '';
 
     if (!$currentPassword || !$newPassword || !$confirmPassword) {
-        $message = 'All password fields are required.';
-        $messageType = 'error';
+        $flashPopupMessage = 'All password fields are required.';
+        $flashPopupType = 'error';
     } elseif ($newPassword !== $confirmPassword) {
-        $message = 'New password and confirmation do not match.';
-        $messageType = 'error';
+        $flashPopupMessage = 'New password and confirmation do not match.';
+        $flashPopupType = 'error';
     } elseif (strlen($newPassword) < 6) {
-        $message = 'New password must be at least 6 characters long.';
-        $messageType = 'error';
+        $flashPopupMessage = 'New password must be at least 6 characters long.';
+        $flashPopupType = 'error';
     } else {
         $result = change_user_password($userId, 'student', $currentPassword, $newPassword);
         if ($result['success']) {
-            $message = 'Password changed successfully.';
-            $messageType = 'success';
+            $flashPopupMessage = 'Password changed successfully.';
+            $flashPopupType = 'success';
         } else {
-            $message = $result['error'];
-            $messageType = 'error';
+            $flashPopupMessage = $result['error'];
+            $flashPopupType = 'error';
         }
     }
 }
@@ -95,13 +95,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
   .form-control { width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:6px; background-color:#fff; font-size:0.9rem; color:#1f2937; outline:none; }
   .form-control:focus { border-color:var(--primary-green); box-shadow:0 0 0 3px rgba(14,68,41,0.15); }
   .btn-submit { background-color:var(--primary-green); color:white; border:none; padding:10px 20px; border-radius:6px; font-size:0.9rem; font-weight:500; cursor:pointer; display:flex; align-items:center; gap:6px; }
-  .btn-submit:hover { background-color:#165c39; }
-  .btn-cancel { background-color:#e5e7eb; color:#374151; border:none; padding:10px 20px; border-radius:6px; font-size:0.9rem; font-weight:500; cursor:pointer; }
-  .alert { padding:12px 16px; border-radius:6px; margin-bottom:16px; font-size:0.85rem; }
-  .alert-success { background-color:#d1fae5; color:#065f46; }
-  .alert-error { background-color:#fee2e2; color:#991b1b; }
-  .alert-info { background-color:#dbeafe; color:#1e40af; }
-  .nav-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px; max-width:720px; }
+.btn-submit:hover { background-color:#165c39; }
+   .btn-cancel { background-color:#e5e7eb; color:#374151; border:none; padding:10px 20px; border-radius:6px; font-size:0.9rem; font-weight:500; cursor:pointer; }
+   .nav-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px; max-width:720px; }
  .nav-card { background:var(--card-bg); border:1px solid var(--border-color); border-radius:8px; padding:16px; text-decoration:none; color:inherit; display:flex; align-items:center; gap:12px; transition:transform .15s ease, box-shadow .15s ease; }
  .nav-card:hover { transform:translateY(-2px); box-shadow:0 4px 6px rgba(0,0,0,0.05); background:var(--light-green-bg); }
  .nav-card.active { background:var(--light-green-bg); border-color:var(--primary-green); }
@@ -157,10 +153,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
         </a>
       </div>
 
-    <?php if ($message): ?>
-      <div class="alert alert-<?php echo $messageType; ?>"><?php echo htmlspecialchars($message); ?></div>
-    <?php endif; ?>
-
     <section class="panel-block">
       <h2 class="panel-title">Change Password</h2>
        <form method="post">
@@ -185,29 +177,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
        </section>
      </main>
 <script>
-       document.addEventListener('DOMContentLoaded', function() {
-         var logoutBtn = document.querySelector('.logout-btn');
-         if (logoutBtn) {
-           logoutBtn.addEventListener('click', function(e) {
-             e.preventDefault();
-             var self = this;
-             Swal.fire({
-               title: 'Are you sure you want to log out?',
-               text: 'You will be signed out of your account.',
-               icon: 'warning',
-               showCancelButton: true,
-               confirmButtonColor: '#0e4429',
-               cancelButtonColor: '#6b7280',
-               confirmButtonText: 'Yes, Log Out',
-               cancelButtonText: 'Cancel'
-             }).then(function(result) {
-               if (result.isConfirmed) {
-                 window.location.href = 'login.php?logout=1';
-               }
-             });
-           });
-         }
-       });
-     </script>
+        function showPopup(message, type) {
+          if (!message) return;
+          var icon = 'info';
+          if (type === 'success') icon = 'success';
+          if (type === 'error') icon = 'error';
+          if (type === 'warning') icon = 'warning';
+          Swal.fire({
+            title: message,
+            icon: icon,
+            confirmButtonColor: '#0e4429',
+            toast: false
+          });
+        }
+        function showConfirmDialog(message, callback) {
+          Swal.fire({
+            title: message,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#0e4429',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: 'Yes',
+            cancelButtonText: 'Cancel'
+          }).then(function(result) {
+            if (result.isConfirmed && callback) callback();
+          });
+        }
+        document.addEventListener('DOMContentLoaded', function() {
+          if ('<?php echo addslashes($flashPopupMessage); ?>') {
+            showPopup('<?php echo addslashes($flashPopupMessage); ?>', '<?php echo $flashPopupType; ?>');
+          }
+          var logoutBtn = document.querySelector('.logout-btn');
+          if (logoutBtn) {
+            logoutBtn.addEventListener('click', function(e) {
+              e.preventDefault();
+              showConfirmDialog('Are you sure you want to log out?', function() {
+                window.location.href = 'login.php?logout=1';
+              });
+            });
+          }
+        });
+      </script>
   </body>
 </html>
